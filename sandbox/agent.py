@@ -61,6 +61,12 @@ SNAPSHOT_JS = """() => {
 }"""
 
 
+FRAME_BUTTONS_JS = """() => Array.from(document.querySelectorAll('button,a[href],[role=button]'))
+  .filter(e => { const r = e.getBoundingClientRect(); return r.width > 2 && r.height > 2; })
+  .map(e => (e.innerText || e.getAttribute('aria-label') || '').trim().replace(/\\s+/g, ' ').slice(0, 40))
+  .filter(Boolean).slice(0, 12)"""
+
+
 class Browser:
     """One headless Chromium page, driven by element numbers. It lives on its own asyncio loop so a screenshot
     for the live view can be taken while an action (a slow page load, say) is still running."""
@@ -146,6 +152,16 @@ class Browser:
             lines.append(f"[{e['n']}] {e['kind']} {e['label']!r}{val}{extra}{cov}")
         if not d["els"]:
             lines.append("(none)")
+        framed = []
+        for frame in page.frames[1:6]:
+            try:
+                framed += await frame.evaluate(FRAME_BUTTONS_JS)
+            except Exception:
+                pass
+        if framed:
+            lines.append("")
+            lines.append("Buttons and links inside embedded frames (not numbered; click them by text): "
+                         + ", ".join(repr(t) for t in dict.fromkeys(framed)))
         if any(e.get("covered") for e in d["els"]):
             lines.append("")
             lines.append("Something is covering the page (a popup or banner). If its buttons aren't listed, click them by their "
