@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from . import providers, tools
 
 MAX_PARALLEL = 4  # tool calls and subagents running at once
+MAX_ROUNDS = 200  # backstop on tool rounds per reply (and per subagent)
 
 BASE_PROMPT = "You are Lark, a personal assistant. Be direct and concise."
 SUB_PROMPT = ("You are a subagent working for Lark on one task. You can't see the conversation, only the task below. "
@@ -42,7 +43,7 @@ def system_prompt(available: list[tools.Tool], sub: bool = False) -> str:
 async def _subagent(name: str, key: str, model: str, task: str, steps: list[str]) -> str:
     inner = await tools.available()
     answer = ""
-    async for ev in loop(name, key, model, [{"role": "user", "content": task}], inner, None, sub=True):
+    async for ev in loop(name, key, model, [{"role": "user", "content": task}], inner, MAX_ROUNDS, sub=True):
         if "text" in ev:
             answer += ev["text"]
         elif "tool_start" in ev:
@@ -58,7 +59,7 @@ async def run(name: str, key: str, model: str, history: list[dict]):
     available = await tools.available()
     if available:
         available = available + [SUBAGENT]
-    async for ev in loop(name, key, model, history, available, None):
+    async for ev in loop(name, key, model, history, available, MAX_ROUNDS):
         yield ev
 
 
