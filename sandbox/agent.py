@@ -178,7 +178,13 @@ class Browser:
                 if a.get("submit"):
                     await target.press("Enter")
         elif action == "press":
-            await page.keyboard.press(str(a.get("key", "Enter")))
+            keys = a.get("keys")
+            if isinstance(keys, list) and keys:
+                for k in keys[:100]:
+                    await page.keyboard.press(str(k))
+                    await page.wait_for_timeout(120)  # a game needs a moment to take each move
+            else:
+                await page.keyboard.press(str(a.get("key", "Enter")))
         elif action == "scroll":
             dy = 700 if a.get("direction", "down") != "up" else -700
             await page.evaluate("dy => window.scrollBy(0, dy)", dy)

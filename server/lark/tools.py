@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Awaitable, Callable
 
 import base64
+import re
 
 from . import files, sandbox, search, vault
 
@@ -61,8 +62,15 @@ async def web_search(args: dict) -> str:
     return "\n\n".join(f"{i}. {r['title']}\n{r['url']}\n{r['snippet']}" for i, r in enumerate(rows, 1))
 
 
+OWN_BROWSER = re.compile(r"playwright|puppeteer|selenium|webdriver", re.I)
+NO_OWN_BROWSER = ("Don't script your own browser in the sandbox: it has limited CPU and memory and starves the real one. "
+                  "Use the browser tool instead (press accepts a list of keys for games and fast input).")
+
+
 async def run_command(args: dict) -> str:
     command = _str(args, "command")
+    if OWN_BROWSER.search(command):
+        raise ToolError(NO_OWN_BROWSER)
     timeout = args.get("timeout", 60)
     timeout = timeout if isinstance(timeout, int) and 1 <= timeout <= 600 else 60
     try:
@@ -86,6 +94,8 @@ async def write_file(args: dict) -> str:
     content = args.get("content")
     if not isinstance(content, str):
         raise ToolError("Missing 'content'.")
+    if OWN_BROWSER.search(content):
+        raise ToolError(NO_OWN_BROWSER)
     try:
         r = await sandbox.write(_str(args, "path"), content)
     except sandbox.SandboxError as e:
@@ -127,6 +137,8 @@ def _browser_detail(a: dict) -> str:
         return str(a.get("url", ""))
     if action == "click":
         return f"click #{a.get('id', '')}"
+    if action == "press" and isinstance(a.get("keys"), list):
+        return f"press {len(a['keys'])} keys"
     if action == "type":
         return f"type in #{a.get('id', '')}"
     return action
@@ -164,11 +176,12 @@ BROWSER = Tool(
     "browser", "Browser",
     "Use a real web browser (headless Chromium in the sandbox). Every call returns a snapshot of the page: its text and a "
     "numbered list of links, buttons and fields. Actions: goto (url), click (id), type (id, text, optional submit), "
-    "press (key, e.g. Enter), scroll (direction up or down), back, snapshot, screenshot (shows the page to the user). Element numbers only last until the next "
+    "press (key, e.g. Enter, or keys: a list of keys pressed in order, up to 100, for games and fast input), scroll (direction up or down), back, snapshot, screenshot (shows the page to the user). Element numbers only last until the next "
     "action, so use the latest snapshot. Use it for pages that need clicking or logging in, or that search can't read.",
     _obj({"action": {"type": "string", "enum": ["goto", "click", "type", "press", "scroll", "back", "snapshot", "screenshot"]},
           "url": {"type": "string"}, "id": {"type": "integer"}, "text": {"type": "string"},
-          "submit": {"type": "boolean"}, "key": {"type": "string"}, "direction": {"type": "string"}}, ["action"]),
+          "submit": {"type": "boolean"}, "key": {"type": "string"},
+          "keys": {"type": "array", "items": {"type": "string"}}, "direction": {"type": "string"}}, ["action"]),
     browser, _browser_detail)
 
 

@@ -48,7 +48,7 @@ async def write(path: str, content: str) -> dict:
 
 async def browse(args: dict) -> dict:
     """Returns {"snapshot": str, "image": base64 jpeg (screenshot action only)}."""
-    keep = {k: args[k] for k in ("action", "url", "id", "text", "submit", "key", "direction") if k in args}
+    keep = {k: args[k] for k in ("action", "url", "id", "text", "submit", "key", "keys", "direction") if k in args}
     return await _call("POST", "/browser", json=keep, timeout=100)
 
 
