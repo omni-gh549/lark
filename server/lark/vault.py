@@ -1,0 +1,93 @@
+"""Settings and API keys on disk. Keys are encrypted with Fernet and never leave the server."""
+import json
+import os
+import tempfile
+from pathlib import Path
+
+from cryptography.fernet import Fernet, InvalidToken
+
+DATA_DIR = Path(os.environ.get("LARK_DATA", "data")).resolve()
+SETTINGS = DATA_DIR / "settings.json"
+MASTER = DATA_DIR / "secret.key"
+
+DEFAULTS = {
+    "provider": "openrouter",
+    "models": {"openrouter": "deepseek/deepseek-v4.1-flash", "gateway": ""},
+    "keys": {},
+}
+
+
+def _private_dir():
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        DATA_DIR.chmod(0o700)
+    except OSError:
+        pass
+
+
+def _fernet() -> Fernet:
+    env = os.environ.get("LARK_SECRET_KEY")
+    if env:
+        return Fernet(env.encode())
+    _private_dir()
+    if not MASTER.exists():
+        fd = os.open(MASTER, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "wb") as f:
+            f.write(Fernet.generate_key())
+    return Fernet(MASTER.read_bytes().strip())
+
+
+def load() -> dict:
+    if not SETTINGS.exists():
+        return json.loads(json.dumps(DEFAULTS))
+    data = json.loads(SETTINGS.read_text())
+    return {
+        "provider": data.get("provider", DEFAULTS["provider"]),
+        "models": {**DEFAULTS["models"], **data.get("models", {})},
+        "keys": data.get("keys", {}),
+    }
+
+
+def _save(data: dict):
+    _private_dir()
+    fd, tmp = tempfile.mkstemp(dir=DATA_DIR, suffix=".tmp")
+    with os.fdopen(fd, "w") as f:
+        json.dump(data, f, indent=2)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, SETTINGS)
+
+
+def update(provider=None, models=None):
+    data = load()
+    if provider:
+        data["provider"] = provider
+    if models:
+        data["models"].update(models)
+    _save(data)
+
+
+def set_key(name: str, key: str):
+    data = load()
+    data["keys"][name] = _fernet().encrypt(key.encode()).decode()
+    _save(data)
+
+
+def delete_key(name: str):
+    data = load()
+    data["keys"].pop(name, None)
+    _save(data)
+
+
+def get_key(name: str) -> str | None:
+    token = load()["keys"].get(name)
+    if not token:
+        return None
+    try:
+        return _fernet().decrypt(token.encode()).decode()
+    except InvalidToken:
+        return None  # master key changed; treat as unset so the user re-enters it
+
+
+def key_hint(name: str) -> str | None:
+    key = get_key(name)
+    return key[-4:] if key else None
