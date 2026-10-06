@@ -32,15 +32,19 @@ CHROME = os.environ.get("SANDBOX_CHROMIUM", "/usr/bin/chromium")
 IDLE_CLOSE = 300  # seconds; the browser is the memory hog, so it shuts down when unused
 
 SNAPSHOT_JS = """() => {
-  document.querySelectorAll('[data-lark]').forEach(e => e.removeAttribute('data-lark'));
+  const roots = [document];  // the page plus every open shadow root (cookie popups often live in one)
+  for (let i = 0; i < roots.length && roots.length < 60; i++)
+    for (const e of roots[i].querySelectorAll('*')) if (e.shadowRoot) roots.push(e.shadowRoot);
+  roots.forEach(r => r.querySelectorAll('[data-lark]').forEach(e => e.removeAttribute('data-lark')));
   const sel = 'a[href],button,input,select,textarea,summary,[role=button],[role=link],[role=tab],[role=menuitem],[onclick],[contenteditable=true]';
   const els = [];
-  for (const e of document.querySelectorAll(sel)) {
+  const found = roots.flatMap(r => Array.from(r.querySelectorAll(sel)));
+  for (const e of found) {
     const r = e.getBoundingClientRect(), cs = getComputedStyle(e);
     if (r.width < 2 || r.height < 2 || cs.visibility === 'hidden' || cs.display === 'none' || e.disabled) continue;
     if (e.type === 'hidden') continue;
     if (r.bottom < 0 || r.right < 0 || r.top > innerHeight || r.left > innerWidth) { /* off-screen: still clickable after scrolling */ }
-    const hit = document.elementFromPoint(Math.min(Math.max(r.left + r.width / 2, 0), innerWidth - 1), Math.min(Math.max(r.top + r.height / 2, 0), innerHeight - 1));
+    const hit = (e.getRootNode().elementFromPoint ? e.getRootNode() : document).elementFromPoint(Math.min(Math.max(r.left + r.width / 2, 0), innerWidth - 1), Math.min(Math.max(r.top + r.height / 2, 0), innerHeight - 1));
     const covered = r.top >= 0 && r.bottom <= innerHeight && hit && hit !== e && !e.contains(hit) && !hit.contains(e);
     const n = els.length + 1;
     e.setAttribute('data-lark', n);
@@ -142,6 +146,10 @@ class Browser:
             lines.append(f"[{e['n']}] {e['kind']} {e['label']!r}{val}{extra}{cov}")
         if not d["els"]:
             lines.append("(none)")
+        if any(e.get("covered") for e in d["els"]):
+            lines.append("")
+            lines.append("Something is covering the page (a popup or banner). If its buttons aren't listed, click them by their "
+                         "visible text (click with text, e.g. 'Accept all') or take a screenshot and click at x, y.")
         return "\n".join(lines)
 
     async def _act(self, a: dict) -> dict:
@@ -156,6 +164,8 @@ class Browser:
             if not url.startswith(("http://", "https://")):
                 raise ValueError("Only http and https pages can be opened.")
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        elif action == "click" and (a.get("text") or a.get("x") is not None) and a.get("id") is None:
+            await self._click_visible(a)
         elif action in ("click", "type"):
             target = page.locator(f'[data-lark="{int(a.get("id"))}"]').first
             if await target.count() == 0:
@@ -196,6 +206,36 @@ class Browser:
             raise ValueError("Unknown browser action.")
         out["snapshot"] = await self._snapshot()
         return out
+
+    async def _click_visible(self, a: dict):
+        """Click by visible text (searching every frame, so consent popups in iframes work) or by x, y pixels."""
+        page = self.page
+        size = page.viewport_size or {"width": 1280, "height": 800}
+        if a.get("x") is not None:
+            x, y = float(a["x"]), float(a.get("y", 0))
+        else:
+            text = str(a["text"])
+            target = None
+            for frame in page.frames:
+                for loc in (frame.get_by_role("button", name=text), frame.get_by_role("link", name=text), frame.get_by_text(text)):
+                    try:
+                        if await loc.count() and await loc.first.is_visible():
+                            target = loc.first
+                            break
+                    except Exception:
+                        continue
+                if target:
+                    break
+            if not target:
+                raise ValueError(f"No visible button, link or text matching {text!r}.")
+            box = await target.bounding_box()
+            if not box:
+                raise ValueError("That element has no position on screen.")
+            x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+        self.cursor = {"x": round(min(max(x / size["width"], 0), 1), 4), "y": round(min(max(y / size["height"], 0), 1), 4),
+                       "click": True, "seq": (self.cursor or {}).get("seq", 0) + 1}
+        await asyncio.sleep(0.6)
+        await page.mouse.click(x, y)
 
     async def _point(self, target, click: bool):
         # The element's centre as a fraction of the visible page, measured in the page itself so it matches

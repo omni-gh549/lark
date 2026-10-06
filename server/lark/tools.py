@@ -71,6 +71,8 @@ async def run_command(args: dict) -> str:
     command = _str(args, "command")
     if OWN_BROWSER.search(command):
         raise ToolError(NO_OWN_BROWSER)
+    if re.search(r"(pkill|killall|kill)\b.*(chrom|playw)", command, re.I):
+        raise ToolError("Don't kill the browser processes: they belong to the browser tool. Use its actions instead.")
     timeout = args.get("timeout", 60)
     timeout = timeout if isinstance(timeout, int) and 1 <= timeout <= 600 else 60
     try:
@@ -136,6 +138,10 @@ def _browser_detail(a: dict) -> str:
     if action == "goto":
         return str(a.get("url", ""))
     if action == "click":
+        if a.get("id") is None and a.get("text"):
+            return f"click \"{str(a['text'])[:40]}\""
+        if a.get("id") is None and a.get("x") is not None:
+            return f"click at {a.get('x')},{a.get('y')}"
         return f"click #{a.get('id', '')}"
     if action == "press" and isinstance(a.get("keys"), list):
         return f"press {len(a['keys'])} keys"
@@ -175,12 +181,12 @@ WRITE_FILE = Tool(
 BROWSER = Tool(
     "browser", "Browser",
     "Use a real web browser (headless Chromium in the sandbox). Every call returns a snapshot of the page: its text and a "
-    "numbered list of links, buttons and fields. Actions: goto (url), click (id), type (id, text, optional submit), "
+    "numbered list of links, buttons and fields. Actions: goto (url), click (id; or text: the visible words on a button or link, which also reaches cookie popups that have no number; or x and y pixel position, 1280 by 800, as in a screenshot), type (id, text, optional submit), "
     "press (key, e.g. Enter, or keys: a list of keys pressed in order, up to 100, for games and fast input), scroll (direction up or down), back, snapshot, screenshot (shows the page to the user). Element numbers only last until the next "
     "action, so use the latest snapshot. Use it for pages that need clicking or logging in, or that search can't read.",
     _obj({"action": {"type": "string", "enum": ["goto", "click", "type", "press", "scroll", "back", "snapshot", "screenshot"]},
           "url": {"type": "string"}, "id": {"type": "integer"}, "text": {"type": "string"},
-          "submit": {"type": "boolean"}, "key": {"type": "string"},
+          "submit": {"type": "boolean"}, "key": {"type": "string"}, "x": {"type": "number"}, "y": {"type": "number"},
           "keys": {"type": "array", "items": {"type": "string"}}, "direction": {"type": "string"}}, ["action"]),
     browser, _browser_detail)
 
