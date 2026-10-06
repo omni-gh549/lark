@@ -22,10 +22,8 @@ class Run:
         self.discard = False  # the chat was deleted mid-run
 
     def push(self, ev: dict):
-        if "text" in ev and self.events and "text" in self.events[-1]:
-            self.events[-1] = {"text": self.events[-1]["text"] + ev["text"]}
-        else:
-            self.events.append(ev)
+        # append only: a client may already have read earlier events, so they must never change
+        self.events.append(ev)
         self.wake()
 
     def wake(self):

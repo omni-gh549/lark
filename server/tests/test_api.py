@@ -156,6 +156,31 @@ run("two subagents started", [s["title"] for s in starts] == ["Subagent", "Subag
 run("subagent results returned", sorted(e["output"] for e in ends) == ["Sub result: alpha", "Sub result: beta"])
 run("parent continues after subagents", "Tool said: Sub result" in "".join(e.get("text", "") for e in ev))
 
+# a live reader sees every chunk, including ones that arrive while it is mid-stream
+from lark import runs as _runs  # noqa: E402
+
+
+async def _live_reader():
+    r = _runs.Run("x")
+    got = []
+
+    async def reader():
+        async for ev in r.stream():
+            got.append(ev.get("text", ""))
+            await asyncio.sleep(0)
+
+    task = asyncio.ensure_future(reader())
+    for part in ["a", "b", "c", "d"]:
+        r.push({"text": part})
+        await asyncio.sleep(0)
+    r.finished = True
+    r.wake()
+    await task
+    return "".join(got)
+
+
+run("live reader gets all text", asyncio.run(_live_reader()) == "abcd")
+
 # server-side runs
 r = c.post("/api/chats/run-test-0001/send", json={"content": "run sleep 1; echo ran"})
 run("send starts a run", r.status_code == 200)

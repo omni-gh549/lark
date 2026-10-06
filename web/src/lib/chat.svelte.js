@@ -186,9 +186,9 @@ export async function send(text) {
   if (chat.busy || !text.trim()) return;
   const id = (chat.id ??= crypto.randomUUID());
   remember(id);
-  const messages = chat.messages.filter((m) => !m.error);
-  chat.messages = messages;
-  messages.push({ role: "user", content: text.trim() });
+  // always go through chat.messages: pushing to a local copy of the array wouldn't update the page
+  chat.messages = chat.messages.filter((m) => !m.error);
+  chat.messages.push({ role: "user", content: text.trim() });
   chat.busy = true;
   try {
     await api(`/api/chats/${id}/send`, { method: "POST", body: { content: text.trim() } });
