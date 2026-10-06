@@ -32,7 +32,10 @@ def system_prompt(available: list[tools.Tool], sub: bool = False) -> str:
                      "Its files survive between conversations, but it may be reset, so tell the user what matters.")
     if "browser" in names:
         lines.append("You can browse the web with a real browser. Prefer web search for simple questions; use the browser to "
-                     "open pages, fill forms and click through sites. Never enter passwords or payment details unless the user gave them for this task.")
+                     "open pages, fill forms and click through sites. Never enter passwords or payment details unless the user gave them for this task. "
+                     "Pages are numbered each time you look; if a cookie banner or popup covers something, close or accept it first. "
+                     "Don't start a second browser in the sandbox (Playwright, Chromium and the like): memory is limited and it can crash "
+                     "the sandbox. To read the game board or page state, use the browser tool's snapshot.")
     if "subagent" in names:
         lines.append("You can delegate to subagents for research or long jobs, several at once. Check what they return before relying on it.")
     if available:
