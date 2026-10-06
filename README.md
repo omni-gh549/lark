@@ -1,8 +1,10 @@
+<p align="center"><img src="docs/hero.png" alt="Lark: your own assistant, on your own server" width="100%"></p>
+
 # Lark
 
-An open source, self-hosted personal assistant. Chat with a model of your choice, through OpenRouter or Vercel AI Gateway.
+An open source, self-hosted personal assistant. Chat with a model of your choice, through OpenRouter or Vercel AI Gateway. It can search the web, run commands in a private sandbox, and hand work to subagents.
 
-Early days: chat and settings work. Memory, Telegram and the VM are next.
+Early days: chat, tools and settings work. Memory, Telegram and a browser tool are next.
 
 ## Run it
 
