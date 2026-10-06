@@ -254,3 +254,15 @@ main { min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); grid-te
 .gallery { display: grid; gap: 10px; }
 .row-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .btn.danger { color: var(--danger); }
+
+.history { position: relative; }
+.history-menu { left: 0; right: auto; width: min(320px, calc(100vw - 32px)); max-height: min(60vh, 420px); overflow-y: auto; }
+.history-row { display: flex; align-items: center; border-radius: 10px; }
+.history-row:hover, .history-row.current { background: var(--glass); }
+.history-pick { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.history-pick:hover { background: none !important; }
+.history-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-del { padding: 8px !important; opacity: 0; color: var(--ink-soft); }
+.history-del svg { width: 15px; height: 15px; display: block; }
+.history-row:hover .history-del, .history-del:focus-visible { opacity: 1; }
+@media (hover: none) { .history-del { opacity: 0.7; } }

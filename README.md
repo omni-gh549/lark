@@ -62,6 +62,8 @@ systemctl restart lark
 
 Anything inside the sandbox can use your server's internet connection, so treat it as a shared box rather than a vault: never put secrets in it. The exec agent listens only on `127.0.0.1:8791` and needs the token in `LARK_SANDBOX_TOKEN`.
 
+Chats are saved on the server in `data/chats/` (one JSON file each), so they follow you across devices. Update order on a server: `git pull`, `systemctl restart lark`, then rebuild `web` (so a new page never meets an old server).
+
 ## Tests
 
 ```sh

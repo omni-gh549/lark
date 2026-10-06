@@ -78,6 +78,16 @@ run("stream text then done", "".join(e.get("text", "") for e in ev) == "Echo: he
 ev = chat("boom")
 run("mid-stream error forwarded", ev[-1] == {"error": "upstream exploded"})
 
+# saved chats
+run("no chats yet", c.get("/api/chats").json() == {"chats": []})
+r = c.put("/api/chats/abcdef123456", json={"messages": [{"role": "user", "content": "Hello   there"}, {"role": "assistant", "content": "Hi", "parts": []}]})
+run("chat saved with title", r.status_code == 200 and r.json()["title"] == "Hello there")
+run("chat loads back", c.get("/api/chats/abcdef123456").json()["messages"][1]["content"] == "Hi")
+run("chat listed", [x["id"] for x in c.get("/api/chats").json()["chats"]] == ["abcdef123456"])
+run("bad chat id rejected", c.put("/api/chats/bad", json={"messages": []}).status_code == 400 and c.get("/api/chats/short").status_code == 404)
+c.delete("/api/chats/abcdef123456")
+run("chat deleted", c.get("/api/chats").json() == {"chats": []} and c.get("/api/chats/abcdef123456").status_code == 404)
+
 # tools
 ev = chat("tools")
 run("no tools offered when nothing is set up", "".join(e.get("text", "") for e in ev) == "")

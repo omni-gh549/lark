@@ -1,34 +1,94 @@
-import { errorMessage } from "./api.js";
+import { api, errorMessage } from "./api.js";
 import { loadSettings } from "./store.svelte.js";
 
-const KEY = "lark.chat";
+const LEGACY = "lark.chat"; // chats used to live in the browser
+const CURRENT = "lark.chat.id";
 
-function restore() {
+export const chat = $state({ id: null, messages: [], busy: false, list: [], ready: false });
+
+const remember = (id) => {
   try {
-    const saved = JSON.parse(localStorage.getItem(KEY) || "[]");
-    if (!Array.isArray(saved)) return [];
-    // older saves had no parts
-    return saved.map((m) => (m.role === "assistant" && !m.parts ? { ...m, parts: [{ type: "text" }] } : m));
+    id ? localStorage.setItem(CURRENT, id) : localStorage.removeItem(CURRENT);
   } catch {
-    return [];
+    /* fine: the newest chat just won't reopen by itself */
+  }
+};
+
+export async function refreshList() {
+  try {
+    chat.list = (await api("/api/chats")).chats;
+  } catch {
+    /* leave the old list */
   }
 }
 
-export const chat = $state({ messages: restore(), busy: false });
-
-function persist() {
+async function save(id, messages) {
+  const keep = messages.filter((m) => !m.error && (m.content || m.parts?.some((p) => p.type === "tool")));
+  if (!keep.length) return;
   try {
-    const keep = chat.messages.filter((m) => !m.error && (m.content || m.parts?.some((p) => p.type === "tool")));
-    localStorage.setItem(KEY, JSON.stringify(keep));
+    await api(`/api/chats/${id}`, { method: "PUT", body: { messages: keep } });
+    refreshList();
   } catch {
-    /* storage unavailable: the chat still works, it just isn't remembered */
+    /* the chat is still on screen; the next turn tries again */
   }
+}
+
+// older assistant messages had no parts
+const upgrade = (messages) =>
+  messages.map((m) => (m.role === "assistant" && !m.parts ? { ...m, parts: [{ type: "text", text: m.content }] } : m));
+
+export async function init() {
+  if (chat.ready) return;
+  chat.ready = true;
+  try {
+    const old = JSON.parse(localStorage.getItem(LEGACY) || "[]");
+    if (Array.isArray(old) && old.length) {
+      chat.id = crypto.randomUUID();
+      chat.messages = upgrade(old);
+      remember(chat.id);
+      await save(chat.id, chat.messages);
+    }
+    localStorage.removeItem(LEGACY);
+  } catch {
+    /* nothing to migrate */
+  }
+  await refreshList();
+  let id = null;
+  try {
+    id = localStorage.getItem(CURRENT);
+  } catch {
+    /* ignore */
+  }
+  if (id && !chat.messages.length) await openChat(id);
+}
+
+export async function openChat(id) {
+  stop();
+  try {
+    const doc = await api(`/api/chats/${id}`);
+    chat.id = doc.id;
+    chat.messages = upgrade(doc.messages);
+    remember(doc.id);
+  } catch {
+    remember(null);
+  }
+}
+
+export async function deleteChat(id) {
+  try {
+    await api(`/api/chats/${id}`, { method: "DELETE" });
+  } catch {
+    return;
+  }
+  if (chat.id === id) newChat();
+  refreshList();
 }
 
 export function newChat() {
   stop();
+  chat.id = null;
   chat.messages = [];
-  persist();
+  remember(null);
 }
 
 let controller = null;
@@ -50,12 +110,15 @@ function finishTools(reply) {
 
 export async function send(text) {
   if (chat.busy || !text.trim()) return;
-  chat.messages.push({ role: "user", content: text.trim() });
-  const history = chat.messages
+  const id = (chat.id ??= crypto.randomUUID());
+  remember(id);
+  const messages = chat.messages;
+  messages.push({ role: "user", content: text.trim() });
+  const history = messages
     .filter((m) => !m.error && m.content)
     .map(({ role, content }) => ({ role, content }));
-  chat.messages.push({ role: "assistant", content: "", parts: [] });
-  const reply = chat.messages[chat.messages.length - 1];
+  messages.push({ role: "assistant", content: "", parts: [] });
+  const reply = messages[messages.length - 1];
   chat.busy = true;
   controller = new AbortController();
 
@@ -96,7 +159,7 @@ export async function send(text) {
     if (!reply.content && !reply.parts.length) throw new Error("The model sent an empty reply.");
   } catch (e) {
     if (e.name === "AbortError") {
-      if (!reply.content && !reply.parts.length) chat.messages.pop();
+      if (!reply.content && !reply.parts.length) messages.pop();
       else finishTools(reply);
     } else {
       finishTools(reply);
@@ -106,7 +169,7 @@ export async function send(text) {
   } finally {
     chat.busy = false;
     controller = null;
-    persist();
+    save(id, messages);
   }
 }
 

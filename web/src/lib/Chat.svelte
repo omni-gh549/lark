@@ -1,12 +1,15 @@
 <script>
-  import { tick } from "svelte";
-  import { chat, send, stop } from "./chat.svelte.js";
+  import { onMount, tick } from "svelte";
+  import { chat, init, send, stop } from "./chat.svelte.js";
   import { configured } from "./store.svelte.js";
   import { render } from "./markdown.js";
   import ToolStatus from "./ToolStatus.svelte";
   import ToolChip from "./ToolChip.svelte";
 
   let { onsettings } = $props();
+  onMount(() => {
+    init().then(() => tick()).then(scrollDown);
+  });
   let text = $state("");
   let box = $state();
   let thread = $state();
@@ -23,7 +26,7 @@
   }
 
   function scrollDown() {
-    thread.scrollTop = thread.scrollHeight;
+    if (thread) thread.scrollTop = thread.scrollHeight;
   }
 
   function resize() {

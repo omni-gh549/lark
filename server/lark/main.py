@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import agent, auth, providers, sandbox, search, vault
+from . import agent, auth, chats, providers, sandbox, search, vault
 
 KEY_NAMES = set(providers.PROVIDERS) | set(search.SEARCH_PROVIDERS)
 DIST = Path(os.environ.get("LARK_DIST", Path(__file__).resolve().parents[2] / "web" / "dist"))
@@ -182,6 +182,38 @@ async def chat(body: ChatIn):
 
     return StreamingResponse(events(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+
+class SavedChat(BaseModel):
+    messages: list[dict] = Field(max_length=1000)
+
+
+@app.get("/api/chats")
+async def list_chats():
+    return {"chats": chats.listing()}
+
+
+@app.get("/api/chats/{chat_id}")
+async def get_chat(chat_id: str):
+    doc = chats.load(chat_id) if chats.valid(chat_id) else None
+    return doc or err(404, "No such chat.")
+
+
+@app.put("/api/chats/{chat_id}")
+async def put_chat(chat_id: str, body: SavedChat):
+    if not chats.valid(chat_id):
+        return err(400, "Bad chat id.")
+    try:
+        return chats.save(chat_id, body.messages)
+    except ValueError as e:
+        return err(413, str(e))
+
+
+@app.delete("/api/chats/{chat_id}")
+async def delete_chat(chat_id: str):
+    if chats.valid(chat_id):
+        chats.delete(chat_id)
+    return {"ok": True}
 
 
 @app.get("/api/sandbox")

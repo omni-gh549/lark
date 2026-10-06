@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { api } from "./lib/api.js";
   import { app, loadSettings } from "./lib/store.svelte.js";
-  import { chat, newChat } from "./lib/chat.svelte.js";
+  import { chat, newChat, openChat, deleteChat, refreshList } from "./lib/chat.svelte.js";
   import Chat from "./lib/Chat.svelte";
   import Projects from "./lib/Projects.svelte";
   import Settings from "./lib/Settings.svelte";
@@ -20,6 +20,25 @@
   let panelsOpen = $state(false);
   let menuOpen = $state(false);
   let menuEl = $state();
+  let historyOpen = $state(false);
+  let historyEl = $state();
+
+  const toggleHistory = () => {
+    historyOpen = !historyOpen;
+    if (historyOpen) refreshList();
+  };
+  const pick = async (id) => {
+    historyOpen = false;
+    await openChat(id);
+    go("chat");
+  };
+  const when = (t) => {
+    const d = new Date(t * 1000);
+    const days = Math.floor((Date.now() - d) / 864e5);
+    if (days < 1 && new Date().getDate() === d.getDate()) return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    if (days < 7) return d.toLocaleDateString([], { weekday: "short" });
+    return d.toLocaleDateString([], { day: "numeric", month: "short" });
+  };
 
   const go = (r) => {
     route = r;
@@ -32,10 +51,12 @@
     const onhash = () => (route = fromHash());
     const onclick = (e) => {
       if (menuOpen && menuEl && !menuEl.contains(e.target)) menuOpen = false;
+      if (historyOpen && historyEl && !historyEl.contains(e.target)) historyOpen = false;
     };
     const onkey = (e) => {
       if (e.key !== "Escape") return;
       if (menuOpen) menuOpen = false;
+      else if (historyOpen) historyOpen = false;
       else panelsOpen = false;
     };
     addEventListener("hashchange", onhash);
@@ -72,6 +93,28 @@
           <button class="icon-btn" aria-label="New chat" onclick={newChat} disabled={!chat.messages.length}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h8M4 20l1-4L16 5l3 3L8 19z"/></svg>
           </button>
+          <div class="history" bind:this={historyEl}>
+            <button class="icon-btn" aria-label="Chat history" aria-expanded={historyOpen} aria-controls="history-menu" onclick={toggleHistory}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.4-5.5L4.5 8.8"/><path d="M4.5 4.5v4.3h4.3M12 8v4.2l2.8 1.8"/></svg>
+            </button>
+            {#if historyOpen}
+              <div class="menu history-menu" id="history-menu">
+                {#each chat.list as c (c.id)}
+                  <div class="history-row" class:current={c.id === chat.id}>
+                    <button class="history-pick" onclick={() => pick(c.id)}>
+                      <span class="history-title">{c.title}</span>
+                      <span class="menu-sub">{when(c.updated)}</span>
+                    </button>
+                    <button class="history-del" aria-label="Delete chat" onclick={() => deleteChat(c.id)}>
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>
+                    </button>
+                  </div>
+                {:else}
+                  <p class="menu-sub" style="margin:8px 10px">No saved chats yet.</p>
+                {/each}
+              </div>
+            {/if}
+          </div>
         {/if}
       </div>
 
