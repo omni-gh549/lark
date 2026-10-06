@@ -24,6 +24,10 @@ def err(status: int, message: str) -> JSONResponse:
 async def guard(request: Request, call_next):
     if not request.url.path.startswith("/api/"):
         return await call_next(request)
+    if (request.url.path == "/api/health" and request.client and request.client.host in ("127.0.0.1", "::1")
+            and auth.host_is_local(request.headers.get("host", ""))):
+        # for the deploy script on the server itself: wait until nothing is running before a restart
+        return JSONResponse({"running": runs.running()})
     if not auth.password():
         if not auth.host_is_local(request.headers.get("host", "")):
             return err(403, "Set LARK_PASSWORD on the server before exposing Lark beyond localhost.")

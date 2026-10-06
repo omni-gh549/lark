@@ -49,6 +49,10 @@ class Run:
             self.waiters.discard(w)
 
 
+def running() -> int:
+    return sum(1 for r in _runs.values() if not r.finished)
+
+
 def get(chat_id: str) -> "Run | None":
     r = _runs.get(chat_id)
     return r if r and not r.finished else None
