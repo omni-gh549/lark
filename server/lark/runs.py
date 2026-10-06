@@ -7,7 +7,7 @@ assistant message is written into the saved chat.
 import asyncio
 import json
 
-from . import agent, chats
+from . import agent, chats, sandbox
 
 _runs: dict[str, "Run"] = {}
 
@@ -94,6 +94,8 @@ async def _execute(run: Run, name: str, key: str, model: str, history: list[dict
             run.push(ev)
     except asyncio.CancelledError:
         run.push({"stopped": True})
+        if sandbox.configured():
+            await sandbox.kill_all()  # a command it started would otherwise keep running after Stop
     except Exception:
         error = "Something went wrong running that reply."
         run.push({"error": error})

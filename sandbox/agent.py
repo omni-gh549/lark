@@ -25,6 +25,7 @@ MAX_FILE = 8_000_000
 MAX_BODY = 4_000_000
 MAX_JOBS = 4
 jobs = threading.BoundedSemaphore(MAX_JOBS)
+running: set = set()  # commands in flight, so Stop can kill them
 
 
 CHROME = os.environ.get("SANDBOX_CHROMIUM", "/usr/bin/chromium")
@@ -232,12 +233,14 @@ def resolve(path: str) -> str:
 def run(command: str, timeout: int) -> dict:
     if not jobs.acquire(blocking=False):
         return {"error": "Too many commands running at once."}
+    p = None
     try:
         os.makedirs(HOME, exist_ok=True)
         env = {**os.environ, "HOME": HOME, "TERM": "dumb", "DEBIAN_FRONTEND": "noninteractive"}
         env.pop("SANDBOX_TOKEN", None)
         p = subprocess.Popen(["bash", "-c", command], cwd=HOME, env=env, stdin=subprocess.DEVNULL,
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+        running.add(p)
         timed_out = False
         try:
             out, _ = p.communicate(timeout=timeout)
@@ -255,7 +258,20 @@ def run(command: str, timeout: int) -> dict:
             text = text[: MAX_OUTPUT // 2] + "\n… [output cut] …\n" + text[-MAX_OUTPUT // 2:]
         return {"output": text, "exit_code": None if timed_out else p.returncode, "timed_out": timed_out}
     finally:
+        if p:
+            running.discard(p)
         jobs.release()
+
+
+def kill_all() -> int:
+    n = 0
+    for p in list(running):
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+            n += 1
+        except (ProcessLookupError, PermissionError):
+            pass
+    return n
 
 
 def wipe() -> dict:
@@ -358,6 +374,8 @@ class Handler(BaseHTTPRequestHandler):
                 with open(path, "wb") as f:
                     f.write(data)
                 return self.reply(200, {"path": path, "bytes": len(data)})
+            if (method, url.path) == ("POST", "/exec/kill"):
+                return self.reply(200, {"killed": kill_all()})
             if (method, url.path) == ("POST", "/wipe"):
                 return self.reply(200, wipe())
             self.reply(404, {"error": "Not found."})

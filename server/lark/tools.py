@@ -145,7 +145,8 @@ RUN_COMMAND = Tool(
     "run_command", "Run command",
     "Run a bash command in your persistent Linux sandbox (Debian, internet access, no access to the owner's machine). "
     "Files under /home/lark persist between calls. Install packages with apt or pip if needed. "
-    "Long-running commands are killed at the timeout (seconds, default 60, max 600).",
+    "Long-running commands are killed at the timeout (seconds, default 60, max 600). "
+    "Don't launch browsers here (use the browser tool); memory and CPU are limited.",
     _obj({"command": {"type": "string"}, "timeout": {"type": "integer"}}, ["command"]),
     run_command, lambda a: str(a.get("command", "")).strip().split("\n")[0][:120])
 

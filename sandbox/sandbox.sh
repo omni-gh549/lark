@@ -47,7 +47,7 @@ create() {
   docker network inspect "$NET" >/dev/null 2>&1 || docker network create --subnet "$SUBNET" "$NET" >/dev/null
   docker volume inspect "$VOL" >/dev/null 2>&1 || docker volume create "$VOL" >/dev/null
   docker rm -f "$NAME" >/dev/null 2>&1 || true
-  docker run -d --name "$NAME" --restart unless-stopped \
+  docker run -d --init --name "$NAME" --restart unless-stopped \
     --network "$NET" -p 127.0.0.1:$PORT:$PORT \
     --shm-size 256m --memory "$MEM" --memory-swap "$SWAP" --cpus "$CPUS" --pids-limit "$PIDS" \
     --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add SETUID --cap-add SETGID --cap-add KILL \

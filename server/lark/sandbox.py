@@ -30,6 +30,14 @@ async def run(command: str, timeout: int) -> dict:
     return await _call("POST", "/exec", json={"command": command, "timeout": timeout}, timeout=timeout + 15)
 
 
+async def kill_all() -> None:
+    """Kill every command running in the sandbox (used when a reply is stopped)."""
+    try:
+        await _call("POST", "/exec/kill", timeout=5)
+    except SandboxError:
+        pass
+
+
 async def read(path: str) -> dict:
     return await _call("GET", "/file", params={"path": path})
 
