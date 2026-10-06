@@ -3,3 +3,4 @@ web/dist/
 data/
 __pycache__/
 .venv/
+*.log
