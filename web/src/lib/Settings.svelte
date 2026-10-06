@@ -165,6 +165,7 @@
       </div>
     </div>
 
+    {#if s.search_providers}
     <div class="group">
       <h2>Web search</h2>
       <div class="rows">
@@ -216,6 +217,8 @@
         </div>
       </div>
     </div>
+
+    {/if}
 
     <div class="group">
       <h2>API keys</h2>
