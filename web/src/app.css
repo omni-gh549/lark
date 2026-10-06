@@ -71,9 +71,9 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .top > * { pointer-events: auto; }
 /* messages scroll behind the bar and fade into a blur instead of being cut off */
 .top::before {
-  content: ""; position: absolute; inset: 0 0 -18px; z-index: -1; pointer-events: none;
+  content: ""; position: absolute; inset: 0 0 -44px; z-index: -1; pointer-events: none;
   backdrop-filter: blur(14px);
-  -webkit-mask-image: linear-gradient(#000 55%, transparent); mask-image: linear-gradient(#000 55%, transparent);
+  -webkit-mask-image: linear-gradient(#000 0, #000 52%, rgba(0,0,0,.85) 62%, rgba(0,0,0,.6) 72%, rgba(0,0,0,.35) 82%, rgba(0,0,0,.14) 92%, transparent); mask-image: linear-gradient(#000 0, #000 52%, rgba(0,0,0,.85) 62%, rgba(0,0,0,.6) 72%, rgba(0,0,0,.35) 82%, rgba(0,0,0,.14) 92%, transparent);
 }
 .top-left { display: flex; gap: 8px; }
 .top > :last-child { justify-self: end; }
