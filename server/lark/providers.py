@@ -58,9 +58,13 @@ async def check_key(name: str, key: str) -> str:
     return "Key accepted."
 
 
-async def stream_chat(name: str, key: str, model: str, messages: list[dict]) -> AsyncIterator[dict]:
-    """Yields {"text": str} chunks, then {"done": True}, or {"error": str}."""
+async def stream_round(name: str, key: str, model: str, messages: list[dict], tools: list[dict] | None = None) -> AsyncIterator[dict]:
+    """One model call. Yields {"text"} chunks, then {"tool_calls": [...]} if the model asked for tools,
+    then {"done": True}; or {"error": str}."""
     body = {"model": model, "messages": messages, "stream": True}
+    if tools:
+        body["tools"] = tools
+    calls: dict[int, dict] = {}
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
             async with client.stream(
@@ -88,10 +92,21 @@ async def stream_chat(name: str, key: str, model: str, messages: list[dict]) -> 
                         yield {"error": err.get("message", "The provider stopped mid-reply.") if isinstance(err, dict) else str(err)}
                         return
                     for choice in obj.get("choices", []):
-                        text = (choice.get("delta") or {}).get("content")
-                        if text:
-                            yield {"text": text}
+                        delta = choice.get("delta") or {}
+                        if delta.get("content"):
+                            yield {"text": delta["content"]}
+                        for tc in delta.get("tool_calls") or []:
+                            i = tc.get("index", 0)
+                            call = calls.setdefault(i, {"id": "", "name": "", "arguments": ""})
+                            if tc.get("id"):
+                                call["id"] = tc["id"]
+                            fn = tc.get("function") or {}
+                            if fn.get("name") and not call["name"]:
+                                call["name"] = fn["name"]
+                            call["arguments"] += fn.get("arguments") or ""
     except httpx.HTTPError as e:
         yield {"error": f"Could not reach {PROVIDERS[name]['label']}: {type(e).__name__}."}
         return
+    if calls:
+        yield {"tool_calls": [{**c, "id": c["id"] or f"call_{i}"} for i, c in sorted(calls.items())]}
     yield {"done": True}

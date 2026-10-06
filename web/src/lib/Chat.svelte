@@ -3,6 +3,8 @@
   import { chat, send, stop } from "./chat.svelte.js";
   import { configured } from "./store.svelte.js";
   import { render } from "./markdown.js";
+  import ToolStatus from "./ToolStatus.svelte";
+  import ToolChip from "./ToolChip.svelte";
 
   let { onsettings } = $props();
   let text = $state("");
@@ -27,7 +29,7 @@
   function resize() {
     if (!box) return;
     box.style.height = "auto";
-    box.style.height = box.scrollHeight + "px";
+    box.style.height = Math.min(box.scrollHeight, 160) + "px";
   }
 
   function onkey(e) {
@@ -39,7 +41,10 @@
 
   // follow the stream unless the reader has scrolled up
   $effect(() => {
-    chat.messages.at(-1)?.content;
+    const last = chat.messages.at(-1);
+    last?.content;
+    last?.parts?.length;
+    last?.parts?.at(-1)?.state;
     if (!thread) return;
     const near = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 120;
     if (near) tick().then(scrollDown);
@@ -53,10 +58,21 @@
         <div class="msg me">{m.content}</div>
       {:else if m.error}
         <div class="msg error">{m.content}</div>
-      {:else if !m.content}
-        <div class="msg thinking">Thinking…</div>
       {:else}
-        <div class="msg md">{@html render(m.content)}</div>
+        {@const live = chat.busy && m === chat.messages.at(-1)}
+        {@const lastPart = m.parts?.at(-1)}
+        <div class="turn">
+          {#each m.parts ?? [{ type: "text", text: m.content }] as p}
+            {#if p.type === "text"}
+              {#if p.text}<div class="msg md">{@html render(p.text)}</div>{/if}
+            {:else if p.state !== "running"}
+              <ToolChip part={p} />
+            {/if}
+          {/each}
+          {#if live && lastPart?.type !== "text"}
+            <ToolStatus tool={lastPart?.state === "running" ? lastPart : null} />
+          {/if}
+        </div>
       {/if}
     {/each}
   </div>

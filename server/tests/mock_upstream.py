@@ -31,10 +31,36 @@ async def chat(request: Request):
     if not authed(request):
         return JSONResponse({"error": {"message": "Invalid API key"}}, status_code=401)
     body = await request.json()
-    last = body["messages"][-1]["content"]
+    last_msg = body["messages"][-1]
+    last = last_msg["content"]
+
+    def call(name, args):
+        chunks = [{"index": 0, "id": "call_1", "type": "function", "function": {"name": name, "arguments": ""}},
+                  {"index": 0, "function": {"arguments": json.dumps(args)[:8]}},
+                  {"index": 0, "function": {"arguments": json.dumps(args)[8:]}}]
+        return ["data: " + json.dumps({"choices": [{"delta": {"tool_calls": [c]}}]}) + "\n\n" for c in chunks]
 
     async def gen():
         yield ": PROCESSING\n\n"
+        names = [t["function"]["name"] for t in body.get("tools", [])]
+        if last_msg["role"] == "tool":
+            yield "data: " + json.dumps({"choices": [{"delta": {"content": "Tool said: " + last[:60].replace("\n", " ")}}]}) + "\n\n"
+            yield "data: [DONE]\n\n"
+            return
+        if last.startswith("search ") and "web_search" in names:
+            for c in call("web_search", {"query": last[7:]}):
+                yield c
+            yield "data: [DONE]\n\n"
+            return
+        if last.startswith("run ") and "run_command" in names:
+            for c in call("run_command", {"command": last[4:]}):
+                yield c
+            yield "data: [DONE]\n\n"
+            return
+        if last == "tools":
+            yield "data: " + json.dumps({"choices": [{"delta": {"content": ",".join(names)}}]}) + "\n\n"
+            yield "data: [DONE]\n\n"
+            return
         parts = ["**Bold** and `code`\n\n- one\n- two\n\n[link](https://example.com)"] if last == "md" else ["Echo: ", last]
         for part in parts:
             yield "data: " + json.dumps({"choices": [{"delta": {"content": part}}]}) + "\n\n"
@@ -44,3 +70,10 @@ async def chat(request: Request):
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+@app.get("/brave")
+async def brave(request: Request, q: str = ""):
+    if request.headers.get("x-subscription-token") != "brave-good-key":
+        return JSONResponse({"error": {"detail": "bad token"}}, status_code=401)
+    return {"web": {"results": [{"title": "<strong>Result</strong> for " + q, "url": "https://example.com/1", "description": "A &amp; B"}]}}

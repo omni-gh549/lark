@@ -43,6 +43,25 @@ Lark listens on `127.0.0.1:8790`. Put nginx in front (`deploy/nginx.conf`) and g
 
 To update: `git pull`, rebuild `web`, `systemctl restart lark`. Keys and settings are in `/var/lib/lark`; back that up.
 
+## Tools
+
+Lark can use tools. Each one switches on when its backend is set up, so a fresh install is just chat.
+
+**Web search.** Open Settings, choose Brave Search or Tavily, and paste a key. Lark then searches when it needs to, and the chat shows each search as it happens.
+
+**Sandbox.** A private Linux machine Lark can run commands in, with files that persist between chats. It is a Docker container with its own network, no access to the host, memory/CPU/process limits, and dropped capabilities. Set it up on a Linux server with Docker (as root):
+
+```
+cd /opt/lark/sandbox
+./sandbox.sh up                    # builds the image, starts the container, writes LARK_SANDBOX_* to /etc/lark/lark.env
+./sandbox-firewall.sh install      # blocks the sandbox from the host and private networks (internet stays open)
+systemctl restart lark
+```
+
+`./sandbox.sh reset` wipes the sandbox back to a clean image, `./sandbox.sh nuke` removes it. Settings has a button to clear its files without touching the container. Limits are `SANDBOX_MEM`, `SANDBOX_CPUS` and `SANDBOX_PIDS` (defaults 768m, 1, 256).
+
+Anything inside the sandbox can use your server's internet connection, so treat it as a shared box rather than a vault: never put secrets in it. The exec agent listens only on `127.0.0.1:8791` and needs the token in `LARK_SANDBOX_TOKEN`.
+
 ## Tests
 
 ```sh

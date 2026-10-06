@@ -8,9 +8,9 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import auth, providers, vault
+from . import agent, auth, providers, sandbox, search, vault
 
-SYSTEM_PROMPT = "You are Lark, a personal assistant. Be direct and concise."
+KEY_NAMES = set(providers.PROVIDERS) | set(search.SEARCH_PROVIDERS)
 DIST = Path(os.environ.get("LARK_DIST", Path(__file__).resolve().parents[2] / "web" / "dist"))
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
@@ -66,10 +66,16 @@ def view_settings() -> dict:
     return {
         "provider": s["provider"],
         "models": s["models"],
+        "search": s["search"],
         "auth": bool(auth.password()),
+        "sandbox": sandbox.configured(),
         "providers": {
             name: {"label": p["label"], "keys_url": p["keys_url"], "key_hint": vault.key_hint(name)}
             for name, p in providers.PROVIDERS.items()
+        },
+        "search_providers": {
+            name: {"label": p["label"], "keys_url": p["keys_url"], "key_hint": vault.key_hint(name)}
+            for name, p in search.SEARCH_PROVIDERS.items()
         },
     }
 
@@ -82,6 +88,7 @@ async def get_settings():
 class SettingsIn(BaseModel):
     provider: str | None = None
     models: dict[str, str] | None = None
+    search: str | None = None
 
 
 @app.put("/api/settings")
@@ -90,7 +97,9 @@ async def put_settings(body: SettingsIn):
         return err(400, "Unknown provider.")
     if body.models and set(body.models) - set(providers.PROVIDERS):
         return err(400, "Unknown provider.")
-    vault.update(body.provider, {k: v.strip() for k, v in (body.models or {}).items()})
+    if body.search and body.search not in search.SEARCH_PROVIDERS:
+        return err(400, "Unknown search provider.")
+    vault.update(body.provider, {k: v.strip() for k, v in (body.models or {}).items()}, body.search)
     return view_settings()
 
 
@@ -100,7 +109,7 @@ class KeyIn(BaseModel):
 
 @app.put("/api/keys/{name}")
 async def put_key(name: str, body: KeyIn):
-    if name not in providers.PROVIDERS:
+    if name not in KEY_NAMES:
         return err(404, "Unknown provider.")
     vault.set_key(name, body.key.strip())
     return view_settings()
@@ -108,7 +117,7 @@ async def put_key(name: str, body: KeyIn):
 
 @app.delete("/api/keys/{name}")
 async def delete_key(name: str):
-    if name not in providers.PROVIDERS:
+    if name not in KEY_NAMES:
         return err(404, "Unknown provider.")
     vault.delete_key(name)
     return view_settings()
@@ -116,12 +125,15 @@ async def delete_key(name: str):
 
 @app.post("/api/keys/{name}/test")
 async def test_key(name: str):
-    if name not in providers.PROVIDERS:
+    if name not in KEY_NAMES:
         return err(404, "Unknown provider.")
     key = vault.get_key(name)
     if not key:
         return err(400, "No key saved.")
     try:
+        if name in search.SEARCH_PROVIDERS:
+            rows = await search.search(name, key, "test", 1)
+            return {"ok": True, "detail": "Key works." if rows is not None else ""}
         return {"ok": True, "detail": await providers.check_key(name, key)}
     except Exception as e:
         return err(400, str(e) if isinstance(e, RuntimeError) else "Could not reach the provider.")
@@ -162,14 +174,35 @@ async def chat(body: ChatIn):
     if not model:
         return err(400, f"Choose a {label} model in Settings.")
 
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + [m.model_dump() for m in body.messages]
+    history = [m.model_dump() for m in body.messages]
 
     async def events():
-        async for chunk in providers.stream_chat(name, key, model, messages):
+        async for chunk in agent.run(name, key, model, history):
             yield sse(chunk)
 
     return StreamingResponse(events(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+
+@app.get("/api/sandbox")
+async def sandbox_status():
+    if not sandbox.configured():
+        return {"configured": False}
+    try:
+        return {"configured": True, "ok": True, **await sandbox.health()}
+    except sandbox.SandboxError as e:
+        return {"configured": True, "ok": False, "error": str(e)}
+
+
+@app.post("/api/sandbox/wipe")
+async def sandbox_wipe():
+    if not sandbox.configured():
+        return err(400, "No sandbox is set up.")
+    try:
+        await sandbox.wipe()
+    except sandbox.SandboxError as e:
+        return err(502, str(e))
+    return {"ok": True}
 
 
 if DIST.is_dir():

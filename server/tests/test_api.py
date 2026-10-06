@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import stat
 import sys
 import tempfile
@@ -19,7 +20,7 @@ os.environ.pop("LARK_PASSWORD", None)
 os.environ.pop("LARK_SECRET_KEY", None)
 
 import mock_upstream  # noqa: E402
-from lark import providers, vault  # noqa: E402
+from lark import providers, search, vault  # noqa: E402
 from lark.main import app  # noqa: E402
 
 srv = uvicorn.Server(uvicorn.Config(mock_upstream.app, port=8791, log_level="error"))
@@ -27,6 +28,12 @@ threading.Thread(target=srv.run, daemon=True).start()
 time.sleep(1)
 for p in providers.PROVIDERS.values():
     p["base"] = "http://127.0.0.1:8791"
+
+search.SEARCH_PROVIDERS["brave"]["base"] = "http://127.0.0.1:8791/brave"
+sbx = subprocess.Popen([sys.executable, str(Path(__file__).resolve().parents[2] / "sandbox" / "agent.py")],
+                       env={**os.environ, "SANDBOX_TOKEN": "tok-1", "SANDBOX_HOME": tempfile.mkdtemp(),
+                            "SANDBOX_PORT": "8796", "SANDBOX_BIND": "127.0.0.1"})
+time.sleep(1)
 
 c = TestClient(app, base_url="http://localhost")
 
@@ -71,6 +78,53 @@ run("stream text then done", "".join(e.get("text", "") for e in ev) == "Echo: he
 ev = chat("boom")
 run("mid-stream error forwarded", ev[-1] == {"error": "upstream exploded"})
 
+# tools
+ev = chat("tools")
+run("no tools offered when nothing is set up", "".join(e.get("text", "") for e in ev) == "")
+r = c.put("/api/keys/brave", json={"key": "brave-bad-key"})
+run("search key saved, hint only", r.json()["search_providers"]["brave"]["key_hint"] == "-key" and "brave-bad" not in r.text)
+r = c.post("/api/keys/brave/test")
+run("bad search key reported", r.status_code == 400 and "refused" in r.json()["error"])
+c.put("/api/keys/brave", json={"key": "brave-good-key"})
+run("good search key tests ok", c.post("/api/keys/brave/test").json()["ok"])
+run("bad search provider rejected", c.put("/api/settings", json={"search": "nope"}).status_code == 400)
+run("search provider persisted", c.put("/api/settings", json={"search": "brave"}).json()["search"] == "brave")
+ev = chat("tools")
+run("web_search offered once a key exists", "".join(e.get("text", "") for e in ev) == "web_search")
+ev = chat("search cats")
+kinds = [next(iter(e)) for e in ev]
+run("tool loop events in order", kinds[:2] == ["tool_start", "tool_end"] and kinds[-1] == "done")
+run("tool_start has title and detail", ev[0]["tool_start"]["title"] == "Web search" and ev[0]["tool_start"]["detail"] == "cats")
+run("tool_end carries cleaned results", ev[1]["tool_end"]["ok"] and "Result for cats" in ev[1]["tool_end"]["output"]
+    and "<strong>" not in ev[1]["tool_end"]["output"] and "A & B" in ev[1]["tool_end"]["output"])
+run("model sees tool result", "Tool said: 1. Result for cats" in "".join(e.get("text", "") for e in ev))
+run("sandbox off by default", c.get("/api/sandbox").json() == {"configured": False})
+ev = chat("run echo hi")
+run("run_command not offered without sandbox", ev[0].get("tool_start", {}).get("title") != "Run command")
+
+os.environ.update(LARK_SANDBOX_URL="http://127.0.0.1:8796", LARK_SANDBOX_TOKEN="tok-1")
+st = c.get("/api/sandbox").json()
+run("sandbox status ok", st["configured"] and st["ok"])
+ev = chat("tools")
+run("sandbox tools offered", "".join(e.get("text", "") for e in ev) == "web_search,run_command,read_file,write_file")
+ev = chat("run echo hi && exit 2")
+run("run_command output and exit code", "hi" in ev[1]["tool_end"]["output"] and "exit code 2" in ev[1]["tool_end"]["output"])
+os.environ["LARK_SANDBOX_TOKEN"] = "wrong"
+run("bad sandbox token is a tool error, not a crash", chat("run echo hi")[1]["tool_end"]["ok"] is False)
+os.environ["LARK_SANDBOX_TOKEN"] = "tok-1"
+from lark import tools as _tools  # noqa: E402
+import asyncio  # noqa: E402
+run("write then read file", "Wrote 5 bytes" in asyncio.run(_tools.write_file({"path": "n/a.txt", "content": "hello"}))
+    and asyncio.run(_tools.read_file({"path": "n/a.txt"})) == "hello")
+c.post("/api/sandbox/wipe")
+try:
+    asyncio.run(_tools.read_file({"path": "n/a.txt"}))
+    gone = False
+except _tools.ToolError:
+    gone = True
+run("wipe clears files", gone)
+sbx.terminate()
+os.environ.pop("LARK_SANDBOX_URL"); os.environ.pop("LARK_SANDBOX_TOKEN")
 c.put("/api/settings", json={"provider": "gateway", "models": {"gateway": "x/y"}})
 ev = chat("hello")
 run("bad key at chat time gives error event", ev == [{"error": "Invalid API key (401)"}])

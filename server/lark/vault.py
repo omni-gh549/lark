@@ -13,6 +13,7 @@ MASTER = DATA_DIR / "secret.key"
 DEFAULTS = {
     "provider": "openrouter",
     "models": {"openrouter": "deepseek/deepseek-v4.1-flash", "gateway": ""},
+    "search": "brave",
     "keys": {},
 }
 
@@ -44,6 +45,7 @@ def load() -> dict:
     return {
         "provider": data.get("provider", DEFAULTS["provider"]),
         "models": {**DEFAULTS["models"], **data.get("models", {})},
+        "search": data.get("search", DEFAULTS["search"]),
         "keys": data.get("keys", {}),
     }
 
@@ -57,10 +59,12 @@ def _save(data: dict):
     os.replace(tmp, SETTINGS)
 
 
-def update(provider=None, models=None):
+def update(provider=None, models=None, search=None):
     data = load()
     if provider:
         data["provider"] = provider
+    if search:
+        data["search"] = search
     if models:
         data["models"].update(models)
     _save(data)
