@@ -1,0 +1,19 @@
+[Unit]
+Description=Lark
+After=network.target
+
+[Service]
+User=lark
+Group=lark
+WorkingDirectory=/opt/lark/server
+EnvironmentFile=/etc/lark/lark.env
+ExecStart=/opt/lark/server/.venv/bin/python -m uvicorn lark.main:app --host 127.0.0.1 --port 8790
+Restart=on-failure
+StateDirectory=lark
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

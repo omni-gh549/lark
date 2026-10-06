@@ -40,9 +40,14 @@ class Login(BaseModel):
 async def login(body: Login):
     if not auth.password():
         return {"ok": True}
+    wait = auth.seconds_paused()
+    if wait:
+        return err(429, f"Too many wrong passwords. Try again in {wait // 60 + 1} min.")
     if not auth.password_ok(body.password):
+        auth.record_miss()
         await asyncio.sleep(1)
         return err(401, "Wrong password.")
+    auth.record_success()
     res = JSONResponse({"ok": True})
     res.set_cookie(auth.COOKIE, auth.token(), httponly=True, samesite="strict",
                    secure=bool(os.environ.get("LARK_SECURE_COOKIE")), max_age=60 * 60 * 24 * 30)

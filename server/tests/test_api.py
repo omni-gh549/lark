@@ -88,6 +88,12 @@ os.environ["LARK_PASSWORD"] = "hunter2hunter2"
 c2 = TestClient(app, base_url="https://lark.example.com")
 run("401 without session", c2.get("/api/settings").status_code == 401)
 run("wrong password", c2.post("/api/login", json={"password": "nope"}).status_code == 401)
+for _ in range(4):
+    c2.post("/api/login", json={"password": "nope"})
+r = c2.post("/api/login", json={"password": "hunter2hunter2"})
+run("login paused after repeated misses, even with the right password", r.status_code == 429)
+from lark import auth  # noqa: E402
+auth._paused_until = 0.0
 r = c2.post("/api/login", json={"password": "hunter2hunter2"})
 run("login sets httponly strict cookie", r.status_code == 200 and "httponly" in r.headers["set-cookie"].lower()
     and "samesite=strict" in r.headers["set-cookie"].lower())
