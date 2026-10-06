@@ -34,6 +34,8 @@ def system_prompt(available: list[tools.Tool], sub: bool = False) -> str:
         lines.append("You can browse the web with a real browser. Prefer web search for simple questions; use the browser to "
                      "open pages, fill forms and click through sites. Never enter passwords or payment details unless the user gave them for this task. "
                      "Pages are numbered each time you look; if a cookie banner or popup covers something, close or accept it first. "
+                     "For any website that needs JavaScript or interaction (games, apps, logins), use the browser tool, never curl, wget or scripts: "
+                     "those only see the page's no-JavaScript fallback. "
                      "Don't start a second browser in the sandbox (Playwright, Chromium and the like): memory is limited and it can crash "
                      "the sandbox. To read the game board or page state, use the browser tool's snapshot.")
     if "subagent" in names:
