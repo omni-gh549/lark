@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Lark</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500&family=Geist+Mono:wght@400&display=swap">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <button class="icon-btn" id="panel-toggle" aria-label="Open panels" aria-expanded="false" aria-controls="panels">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M9.5 4.5v15"/></svg>
+    </button>
+
+    <nav class="modes" role="tablist" aria-label="View">
+      <button role="tab" id="tab-chat" aria-selected="true" aria-controls="view-chat">Chat</button>
+      <button role="tab" id="tab-projects" aria-selected="false" aria-controls="view-projects">Projects</button>
+    </nav>
+
+    <div class="account">
+      <button class="avatar" id="account-btn" aria-label="Account" aria-expanded="false" aria-controls="account-menu">O</button>
+      <div class="menu" id="account-menu" hidden>
+        <div class="menu-head">
+          <span class="menu-name">Oscar</span>
+          <span class="menu-sub">DeepSeek V4.1 Flash</span>
+        </div>
+        <button>Memory</button>
+        <button>Contacts</button>
+        <button>Settings</button>
+        <hr>
+        <button>Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <aside class="panels" id="panels" hidden>
+    <article class="card">
+      <p class="line"><span class="verb">Reply</span> to Sam: "Friday at 7 works, see you at Rosa's"</p>
+      <div class="actions">
+        <button class="btn primary">Send</button>
+        <button class="btn">Edit</button>
+      </div>
+    </article>
+
+    <article class="card">
+      <header class="card-head">
+        <span class="dot live" aria-hidden="true"></span>
+        <span>Booking a table at Rosa's</span>
+      </header>
+      <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="9" aria-valuenow="4"><span style="width:44%"></span></div>
+      <p class="meta">Step 4 of 9, choosing a time</p>
+      <div class="actions">
+        <button class="btn">Watch</button>
+        <button class="btn">Take over</button>
+        <button class="btn">Stop</button>
+      </div>
+    </article>
+
+    <article class="card">
+      <header class="card-head"><span>Weather, London</span></header>
+      <div class="tiles">
+        <div class="tile">
+          <span class="meta">Overcast</span>
+          <span class="big">12°</span>
+          <span class="meta">feels 10°</span>
+        </div>
+        <div class="tile">
+          <span class="meta">High</span>
+          <span class="big">14°</span>
+          <span class="meta">low 7°</span>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <header class="card-head"><span>Runs this week</span><span class="meta num">14.2 km</span></header>
+      <div class="bars" aria-label="Kilometres per day">
+        <div><span style="height:55%"></span><small>M</small></div>
+        <div><span style="height:0%"></span><small>T</small></div>
+        <div><span style="height:80%"></span><small>W</small></div>
+        <div><span style="height:0%"></span><small>T</small></div>
+        <div><span style="height:42%"></span><small>F</small></div>
+        <div><span style="height:0%"></span><small>S</small></div>
+        <div><span style="height:0%"></span><small>S</small></div>
+      </div>
+    </article>
+
+    <button class="card new-panel">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      New panel
+    </button>
+  </aside>
+
+  <main>
+    <section class="view chat" id="view-chat" role="tabpanel" aria-labelledby="tab-chat">
+      <div class="thread" id="thread">
+        <div class="msg me">Can you check with Sam if Friday dinner still works?</div>
+        <div class="msg">I've messaged Sam on Telegram. I'll tell you when they reply.</div>
+        <div class="msg">Sam says Friday works, 7pm. Should I book Rosa's?</div>
+        <div class="msg me">Yes, table for two</div>
+        <div class="msg">On it. You can watch the booking from the panel on the left.</div>
+      </div>
+
+      <form class="composer" id="composer">
+        <textarea id="input" rows="1" placeholder="Message Lark" aria-label="Message Lark"></textarea>
+        <button type="button" class="icon-btn bare" aria-label="Attach">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <button type="button" class="icon-btn bare" aria-label="Voice">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v3.5"/></svg>
+        </button>
+      </form>
+    </section>
+
+    <section class="view projects" id="view-projects" role="tabpanel" aria-labelledby="tab-projects" hidden>
+      <div class="project-list">
+        <button class="project">
+          <span class="project-name">Japan trip</span>
+          <span class="meta">April · 6 files · updated 2h ago</span>
+        </button>
+        <button class="project">
+          <span class="project-name">Flat move</span>
+          <span class="meta">3 open tasks · updated yesterday</span>
+        </button>
+        <button class="project">
+          <span class="project-name">Lark</span>
+          <span class="meta">2 files · updated today</span>
+        </button>
+        <button class="project add">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          New project
+        </button>
+      </div>
+    </section>
+  </main>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
