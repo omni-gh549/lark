@@ -89,8 +89,13 @@ class Browser:
         self.pw = await async_playwright().start()
         self.browser = await self.pw.chromium.launch(executable_path=CHROME, headless=True, args=[
             "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--mute-audio", "--disable-extensions",
-            "--disable-background-networking", "--js-flags=--max-old-space-size=384"])
-        ctx = await self.browser.new_context(viewport={"width": 1280, "height": 800}, locale="en-GB")
+            "--disable-background-networking", "--disable-blink-features=AutomationControlled", "--js-flags=--max-old-space-size=384"])
+        # Headless Chromium announces itself ("HeadlessChrome", navigator.webdriver), which makes many sites
+        # refuse to run their scripts, so present as an ordinary desktop Chrome.
+        ctx = await self.browser.new_context(
+            viewport={"width": 1280, "height": 800}, locale="en-GB",
+            user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+        await ctx.add_init_script("Object.defineProperty(navigator, 'webdriver', { get: () => undefined });")
 
         async def gate(route):
             if route.request.resource_type == "media":  # no autoplaying video: it costs memory and tells Lark nothing
@@ -124,6 +129,9 @@ class Browser:
         except Exception:
             pass
         d = await page.evaluate(SNAPSHOT_JS)
+        if len(d["text"].strip()) < 60 and not d["els"]:
+            await page.wait_for_timeout(2000)  # script-heavy pages can still be drawing themselves
+            d = await page.evaluate(SNAPSHOT_JS)
         lines = [f"URL: {d['url']}", f"Title: {d['title']}",
                  f"Scroll: {d['y']}/{max(d['height'] - d['view'], 0)}", "", "Page text:", d["text"].strip() or "(no text)", "",
                  "Interactive elements:"]
