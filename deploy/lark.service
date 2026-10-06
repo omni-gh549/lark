@@ -10,6 +10,7 @@ EnvironmentFile=/etc/lark/lark.env
 ExecStart=/opt/lark/server/.venv/bin/python -m uvicorn lark.main:app --host 127.0.0.1 --port 8790
 Restart=on-failure
 StateDirectory=lark
+StateDirectoryMode=0700
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
