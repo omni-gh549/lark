@@ -63,6 +63,7 @@ class Browser:
         self.acting = asyncio.run_coroutine_threadsafe(self._make_lock(), self.loop).result()
         self.pw = self.browser = self.page = None
         self.last_used = 0.0
+        self.cursor = None  # where the last click or typing landed, as fractions of the viewport, for the live view
 
     async def _make_lock(self):
         return asyncio.Lock()
@@ -105,6 +106,7 @@ class Browser:
             except Exception:
                 pass
         self.pw = self.browser = self.page = None
+        self.cursor = None
 
     def close_if_idle(self):
         if self.page and time.time() - self.last_used > IDLE_CLOSE:
@@ -114,7 +116,7 @@ class Browser:
         page = self.page
         try:
             await page.wait_for_load_state("domcontentloaded", timeout=5000)
-            await page.wait_for_load_state("networkidle", timeout=2500)
+            await page.wait_for_load_state("networkidle", timeout=1200)
         except Exception:
             pass
         d = await page.evaluate(SNAPSHOT_JS)
@@ -145,10 +147,18 @@ class Browser:
             target = page.locator(f'[data-lark="{int(a.get("id"))}"]').first
             if await target.count() == 0:
                 raise ValueError("No element with that number. Use the numbers from the latest snapshot.")
+            await target.scroll_into_view_if_needed(timeout=5000)
+            await self._point(target, action == "click")
+            await asyncio.sleep(0.6)  # let the live view's cursor glide there before the page reacts
             if action == "click":
-                await target.click(timeout=8000)
+                try:
+                    await target.click(timeout=2500)
+                except Exception:
+                    # Playwright waits for the element to be unobscured and still; pages with overlays or
+                    # animations stall it, so after a short wait click anyway.
+                    await target.click(timeout=2500, force=True)
             else:
-                await target.fill(str(a.get("text", "")), timeout=8000)
+                await target.fill(str(a.get("text", "")), timeout=4000)
                 if a.get("submit"):
                     await target.press("Enter")
         elif action == "press":
@@ -164,6 +174,15 @@ class Browser:
             raise ValueError("Unknown browser action.")
         out["snapshot"] = await self._snapshot()
         return out
+
+    async def _point(self, target, click: bool):
+        box = await target.bounding_box()
+        if not box:
+            return
+        size = self.page.viewport_size or {"width": 1280, "height": 800}
+        x = min(max((box["x"] + box["width"] / 2) / size["width"], 0), 1)
+        y = min(max((box["y"] + box["height"] / 2) / size["height"], 0), 1)
+        self.cursor = {"x": round(x, 4), "y": round(y, 4), "click": click, "seq": (self.cursor or {}).get("seq", 0) + 1}
 
     async def _do(self, a: dict) -> dict:
         async with self.acting:  # one action at a time
@@ -295,6 +314,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not data:
                     return self.reply_bytes(204, b"", "image/jpeg")
                 return self.reply_bytes(200, data, "image/jpeg")
+            if (method, url.path) == ("GET", "/browser/cursor"):
+                return self.reply(200, {"cursor": browser.cursor if browser.page else None})
             if (method, url.path) == ("POST", "/browser"):
                 if not browser.available():
                     return self.reply(501, {"error": "This sandbox has no browser. Rebuild it with sandbox.sh up."})

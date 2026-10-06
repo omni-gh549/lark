@@ -55,6 +55,14 @@ async def frame() -> bytes | None:
     return r.content if r.status_code == 200 and r.content else None
 
 
+async def cursor() -> dict | None:
+    """Where the browser last clicked or typed ({x, y, click, seq}, as fractions of the page), or None."""
+    try:
+        return (await _call("GET", "/browser/cursor", timeout=5)).get("cursor")
+    except SandboxError:
+        return None
+
+
 async def read_binary(path: str) -> bytes:
     import base64
     return base64.b64decode((await _call("GET", "/file", params={"path": path, "binary": "1"}, timeout=30))["b64"])

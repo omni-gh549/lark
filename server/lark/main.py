@@ -370,6 +370,13 @@ async def browser_stream(request: Request):
     return StreamingResponse(frames(), media_type=f"multipart/x-mixed-replace; boundary={boundary}", headers=STREAM_HEADERS)
 
 
+@app.get("/api/browser/cursor")
+async def browser_cursor():
+    if not sandbox.configured():
+        return err(404, "No sandbox.")
+    return {"cursor": await sandbox.cursor()}
+
+
 @app.post("/api/sandbox/reset")
 async def sandbox_reset():
     """Full reset: the container is recreated from a clean image by a root-owned unit on the server."""

@@ -290,5 +290,16 @@ main { min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); grid-te
 .lights { display: flex; gap: 5px; }
 .lights i { width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
 .window-url { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); text-align: center; }
-.window-view { aspect-ratio: 16 / 10; background: var(--glass); }
+.window-view { position: relative; aspect-ratio: 16 / 10; background: var(--glass); overflow: hidden; }
+.glow { position: absolute; inset: 0; pointer-events: none; border-radius: inherit; animation: breathe 3.6s ease-in-out infinite;
+  box-shadow: inset 0 0 22px 2px rgba(120, 160, 255, 0.55), inset 0 0 64px 6px rgba(170, 140, 255, 0.28); }
+@keyframes breathe { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+.pointer { position: absolute; width: 0; height: 0; pointer-events: none;
+  transition: left 0.7s cubic-bezier(0.22, 1, 0.36, 1), top 0.7s cubic-bezier(0.22, 1, 0.36, 1); }
+.pointer svg { position: absolute; left: -3px; top: -2px; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35)); }
+.pointer path { fill: #1d2228; stroke: #fff; stroke-width: 1.5; stroke-linejoin: round; }
+.ripple { position: absolute; left: -14px; top: -14px; width: 28px; height: 28px; border-radius: 50%;
+  border: 2px solid rgba(120, 160, 255, 0.9); animation: ripple 0.6s ease-out forwards; }
+@keyframes ripple { from { transform: scale(0.3); opacity: 1; } to { transform: scale(1.5); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .glow, .ripple { animation: none; } .pointer { transition: none; } }
 .window-view img { width: 100%; height: 100%; object-fit: contain; display: block; }
