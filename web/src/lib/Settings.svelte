@@ -233,7 +233,7 @@
                 <button class="btn danger" disabled={wiping} onclick={wipe}>Delete files</button>
                 <button class="btn" onclick={() => (confirmWipe = false)}>Cancel</button>
               {:else if confirmReset}
-                <span class="meta">Erase everything, including installed programs?</span>
+                <span class="meta">Delete everything in the sandbox, including your files and installed programs?</span>
                 <button class="btn danger" disabled={resetting} onclick={resetAll}>Reset sandbox</button>
                 <button class="btn" onclick={() => (confirmReset = false)}>Cancel</button>
               {:else}
