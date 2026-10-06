@@ -103,7 +103,7 @@
                   <div class="history-row" class:current={c.id === chat.id}>
                     <button class="history-pick" onclick={() => pick(c.id)}>
                       <span class="history-title">{c.title}</span>
-                      <span class="menu-sub">{when(c.updated)}</span>
+                      <span class="menu-sub">{#if c.running}<span class="dot live"></span> Replying…{:else}{when(c.updated)}{/if}</span>
                     </button>
                     <button class="history-del" aria-label="Delete chat" onclick={() => deleteChat(c.id)}>
                       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>

@@ -36,6 +36,7 @@ sbx = subprocess.Popen([sys.executable, str(Path(__file__).resolve().parents[2] 
 time.sleep(1)
 
 c = TestClient(app, base_url="http://localhost")
+c.__enter__()  # one event loop for all requests, so background runs outlive a request
 
 
 def run(label, ok):
@@ -100,7 +101,7 @@ run("good search key tests ok", c.post("/api/keys/brave/test").json()["ok"])
 run("bad search provider rejected", c.put("/api/settings", json={"search": "nope"}).status_code == 400)
 run("search provider persisted", c.put("/api/settings", json={"search": "brave"}).json()["search"] == "brave")
 ev = chat("tools")
-run("web_search offered once a key exists", "".join(e.get("text", "") for e in ev) == "web_search")
+run("web_search offered once a key exists", "".join(e.get("text", "") for e in ev) == "web_search,subagent")
 ev = chat("search cats")
 kinds = [next(iter(e)) for e in ev]
 run("tool loop events in order", kinds[:2] == ["tool_start", "tool_end"] and kinds[-1] == "done")
@@ -116,7 +117,7 @@ os.environ.update(LARK_SANDBOX_URL="http://127.0.0.1:8796", LARK_SANDBOX_TOKEN="
 st = c.get("/api/sandbox").json()
 run("sandbox status ok", st["configured"] and st["ok"])
 ev = chat("tools")
-run("sandbox tools offered", "".join(e.get("text", "") for e in ev) == "web_search,run_command,read_file,write_file")
+run("sandbox tools offered", "".join(e.get("text", "") for e in ev) == "web_search,run_command,read_file,write_file,subagent")
 ev = chat("run echo hi && exit 2")
 run("run_command output and exit code", "hi" in ev[1]["tool_end"]["output"] and "exit code 2" in ev[1]["tool_end"]["output"])
 os.environ["LARK_SANDBOX_TOKEN"] = "wrong"
@@ -133,6 +134,75 @@ try:
 except _tools.ToolError:
     gone = True
 run("wipe clears files", gone)
+def sse_events(path):
+    with c.stream("GET", path) as r:
+        return [json.loads(l[5:]) for l in r.iter_lines() if l.startswith("data:")]
+
+
+def wait_idle(cid, secs=15):
+    end = time.time() + secs
+    while time.time() < end:
+        if not c.get(f"/api/chats/{cid}").json()["running"]:
+            return
+        time.sleep(0.1)
+    run("run finished in time", False)
+
+
+# subagents (two in parallel) through the stateless endpoint
+ev = chat("delegate alpha, beta")
+starts = [e["tool_start"] for e in ev if "tool_start" in e]
+ends = [e["tool_end"] for e in ev if "tool_end" in e]
+run("two subagents started", [s["title"] for s in starts] == ["Subagent", "Subagent"] and [s["detail"] for s in starts] == ["alpha", "beta"])
+run("subagent results returned", sorted(e["output"] for e in ends) == ["Sub result: alpha", "Sub result: beta"])
+run("parent continues after subagents", "Tool said: Sub result" in "".join(e.get("text", "") for e in ev))
+
+# server-side runs
+r = c.post("/api/chats/run-test-0001/send", json={"content": "run sleep 1; echo ran"})
+run("send starts a run", r.status_code == 200)
+run("second send while running is refused", c.post("/api/chats/run-test-0001/send", json={"content": "x"}).status_code == 409)
+run("chat shows as running", c.get("/api/chats/run-test-0001").json()["running"] is True
+    and c.get("/api/chats").json()["chats"][0]["running"] is True)
+ev = sse_events("/api/chats/run-test-0001/events")
+run("events replay from the start and end", ev[0].get("tool_start", {}).get("title") == "Run command" and ev[-1] == {"done": True})
+wait_idle("run-test-0001")
+doc = c.get("/api/chats/run-test-0001").json()
+run("finished reply saved with tool part", [m["role"] for m in doc["messages"]] == ["user", "assistant"]
+    and doc["messages"][1]["parts"][0]["state"] == "ok" and "ran" in doc["messages"][1]["parts"][0]["output"]
+    and doc["messages"][1]["content"].startswith("Tool said"))
+run("no run left over", sse_events("/api/chats/run-test-0001/events") == [{"idle": True}])
+# a second client attaching late still gets everything
+c.post("/api/chats/run-test-0001/send", json={"content": "hello"})
+wait_idle("run-test-0001")
+run("history includes earlier turns", len(c.get("/api/chats/run-test-0001").json()["messages"]) == 4)
+# stop keeps what was produced
+c.post("/api/chats/run-test-0002/send", json={"content": "run sleep 30"})
+time.sleep(0.5)
+run("stop reports ok", c.post("/api/chats/run-test-0002/stop").json() == {"ok": True})
+wait_idle("run-test-0002")
+doc = c.get("/api/chats/run-test-0002").json()
+part = doc["messages"][-1]["parts"][0]
+run("stopped run saved, tool marked failed", doc["messages"][-1]["role"] == "assistant" and part["state"] == "error")
+# errors are stored on the chat
+c.put("/api/settings", json={"provider": "gateway", "models": {"gateway": "x/y"}})
+c.put("/api/keys/gateway", json={"key": "sk-bad-key-0000"})
+c.post("/api/chats/run-test-0003/send", json={"content": "hi"})
+wait_idle("run-test-0003")
+run("failed run keeps the user message and the error", c.get("/api/chats/run-test-0003").json()["error"] == "Invalid API key (401)")
+c.put("/api/settings", json={"provider": "openrouter"})
+c.post("/api/chats/run-test-0004/send", json={"content": "run sleep 30"})
+time.sleep(0.4)
+c.delete("/api/chats/run-test-0004")
+time.sleep(0.6)
+run("deleting a running chat doesn't bring it back", c.get("/api/chats/run-test-0004").status_code == 404)
+run("send without setup is a clear 400", c.post("/api/chats/run-test-0005/send", json={"content": ""}).status_code == 422)
+
+run("full reset not offered by default", c.post("/api/sandbox/reset").status_code == 400)
+os.environ["LARK_SANDBOX_RESET_FILE"] = str(Path(DATA) / "reset-request")
+run("full reset writes the request file", c.post("/api/sandbox/reset").json() == {"ok": True}
+    and (Path(DATA) / "reset-request").exists())
+run("status says reset is available", c.get("/api/sandbox").json()["reset_available"])
+os.environ.pop("LARK_SANDBOX_RESET_FILE")
+
 sbx.terminate()
 os.environ.pop("LARK_SANDBOX_URL"); os.environ.pop("LARK_SANDBOX_TOKEN")
 c.put("/api/settings", json={"provider": "gateway", "models": {"gateway": "x/y"}})

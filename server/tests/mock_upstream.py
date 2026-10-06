@@ -34,15 +34,25 @@ async def chat(request: Request):
     last_msg = body["messages"][-1]
     last = last_msg["content"]
 
-    def call(name, args):
-        chunks = [{"index": 0, "id": "call_1", "type": "function", "function": {"name": name, "arguments": ""}},
-                  {"index": 0, "function": {"arguments": json.dumps(args)[:8]}},
-                  {"index": 0, "function": {"arguments": json.dumps(args)[8:]}}]
+    def call(name, args, i=0):
+        chunks = [{"index": i, "id": f"call_{i + 1}", "type": "function", "function": {"name": name, "arguments": ""}},
+                  {"index": i, "function": {"arguments": json.dumps(args)[:8]}},
+                  {"index": i, "function": {"arguments": json.dumps(args)[8:]}}]
         return ["data: " + json.dumps({"choices": [{"delta": {"tool_calls": [c]}}]}) + "\n\n" for c in chunks]
 
     async def gen():
         yield ": PROCESSING\n\n"
         names = [t["function"]["name"] for t in body.get("tools", [])]
+        if "subagent working for Lark" in body["messages"][0]["content"] and last_msg["role"] == "user":
+            yield "data: " + json.dumps({"choices": [{"delta": {"content": "Sub result: " + last}}]}) + "\n\n"
+            yield "data: [DONE]\n\n"
+            return
+        if last.startswith("delegate ") and "subagent" in names and last_msg["role"] == "user":
+            for i, t in enumerate(last[9:].split(",")):
+                for c in call("subagent", {"task": t.strip()}, i):
+                    yield c
+            yield "data: [DONE]\n\n"
+            return
         if last_msg["role"] == "tool":
             yield "data: " + json.dumps({"choices": [{"delta": {"content": "Tool said: " + last[:60].replace("\n", " ")}}]}) + "\n\n"
             yield "data: [DONE]\n\n"

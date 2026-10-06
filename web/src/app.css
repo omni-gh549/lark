@@ -266,3 +266,5 @@ main { min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); grid-te
 .history-del svg { width: 15px; height: 15px; display: block; }
 .history-row:hover .history-del, .history-del:focus-visible { opacity: 1; }
 @media (hover: none) { .history-del { opacity: 0.7; } }
+.steps { margin: 0; padding: 0 12px 4px 28px; font: 12px/1.6 var(--mono); color: var(--ink-soft); }
+.history-pick .dot { display: inline-block; width: 6px; height: 6px; margin-right: 4px; }

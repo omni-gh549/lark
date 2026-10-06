@@ -58,11 +58,13 @@ cd /opt/lark/sandbox
 systemctl restart lark
 ```
 
-`./sandbox.sh reset` wipes the sandbox back to a clean image, `./sandbox.sh nuke` removes it. Settings has a button to clear its files without touching the container. Limits are `SANDBOX_MEM`, `SANDBOX_CPUS` and `SANDBOX_PIDS` (defaults 768m, 1, 256).
+**Subagents.** When any tool is available, Lark can hand tasks to subagents (up to 4 at once, 8 steps each) that work with the same tools and report back.
+
+`./sandbox.sh reset` wipes the sandbox back to a clean image (Settings has a Reset everything button for this; `sandbox.sh up` installs a small systemd path unit so the unprivileged Lark service can ask for it without Docker access), `./sandbox.sh nuke` removes it. Settings has a button to clear its files without touching the container. Limits are `SANDBOX_MEM`, `SANDBOX_CPUS` and `SANDBOX_PIDS` (defaults 768m, 1, 256).
 
 Anything inside the sandbox can use your server's internet connection, so treat it as a shared box rather than a vault: never put secrets in it. The exec agent listens only on `127.0.0.1:8791` and needs the token in `LARK_SANDBOX_TOKEN`.
 
-Chats are saved on the server in `data/chats/` (one JSON file each), so they follow you across devices. Update order on a server: `git pull`, `systemctl restart lark`, then rebuild `web` (so a new page never meets an old server).
+Chats are saved on the server in `data/chats/` (one JSON file each), so they follow you across devices. Replies run on the server too, so leaving the page or switching chats doesn't stop one; open the chat again and it picks up where it is. A server restart does interrupt a reply in progress. Update order on a server: `git pull`, `systemctl restart lark`, then rebuild `web` (so a new page never meets an old server).
 
 ## Tests
 

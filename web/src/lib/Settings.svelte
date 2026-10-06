@@ -59,6 +59,8 @@
   let sandbox = $state(null); // { configured, ok, home, disk_free_mb, error }
   let sandboxNote = $state({ text: "", kind: "" });
   let confirmWipe = $state(false);
+  let confirmReset = $state(false);
+  let resetting = $state(false);
   let wiping = $state(false);
 
   async function loadSandbox() {
@@ -80,6 +82,28 @@
       wiping = false;
       confirmWipe = false;
       loadSandbox();
+    }
+  }
+
+  async function resetAll() {
+    resetting = true;
+    confirmReset = false;
+    sandboxNote = { text: "Resetting the sandbox…", kind: "" };
+    try {
+      await api("/api/sandbox/reset", { method: "POST" });
+      // the server rebuilds the container; wait until it answers again
+      for (let i = 0; i < 40; i++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        await loadSandbox();
+        if (sandbox?.ok && i > 0) break;
+      }
+      sandboxNote = sandbox?.ok
+        ? { text: "Sandbox reset to a fresh install.", kind: "good" }
+        : { text: "The reset is taking longer than expected. Check the server.", kind: "bad" };
+    } catch (e) {
+      sandboxNote = { text: e.message, kind: "bad" };
+    } finally {
+      resetting = false;
     }
   }
 
@@ -208,8 +232,15 @@
                 <span class="meta">Delete everything in {sandbox.home ?? "the sandbox"}?</span>
                 <button class="btn danger" disabled={wiping} onclick={wipe}>Delete files</button>
                 <button class="btn" onclick={() => (confirmWipe = false)}>Cancel</button>
+              {:else if confirmReset}
+                <span class="meta">Erase everything, including installed programs?</span>
+                <button class="btn danger" disabled={resetting} onclick={resetAll}>Reset sandbox</button>
+                <button class="btn" onclick={() => (confirmReset = false)}>Cancel</button>
               {:else}
-                <button class="btn" disabled={!sandbox.ok} onclick={() => ((confirmWipe = true), (sandboxNote = { text: "", kind: "" }))}>Clear files</button>
+                <button class="btn" disabled={!sandbox.ok || resetting} onclick={() => ((confirmWipe = true), (sandboxNote = { text: "", kind: "" }))}>Clear files</button>
+                {#if sandbox.reset_available}
+                  <button class="btn" disabled={resetting} onclick={() => ((confirmReset = true), (sandboxNote = { text: "", kind: "" }))}>Reset everything</button>
+                {/if}
               {/if}
             </div>
             <p class="status {sandboxNote.kind}">{sandboxNote.text}</p>

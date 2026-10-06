@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import agent, auth, chats, providers, sandbox, search, vault
+from . import agent, auth, chats, providers, runs, sandbox, search, vault
 
 KEY_NAMES = set(providers.PROVIDERS) | set(search.SEARCH_PROVIDERS)
 DIST = Path(os.environ.get("LARK_DIST", Path(__file__).resolve().parents[2] / "web" / "dist"))
@@ -162,8 +162,8 @@ def sse(obj: dict) -> str:
     return f"data: {json.dumps(obj)}\n\n"
 
 
-@app.post("/api/chat")
-async def chat(body: ChatIn):
+def ready():
+    """The provider settings a chat needs: (name, key, model), or an error response."""
     s = vault.load()
     name = s["provider"]
     label = providers.PROVIDERS[name]["label"]
@@ -173,15 +173,25 @@ async def chat(body: ChatIn):
         return err(400, f"No {label} key yet. Add one in Settings.")
     if not model:
         return err(400, f"Choose a {label} model in Settings.")
+    return name, key, model
 
+
+STREAM_HEADERS = {"Cache-Control": "no-store", "X-Accel-Buffering": "no"}
+
+
+@app.post("/api/chat")
+async def chat(body: ChatIn):
+    """Stateless one-shot: stream a reply to the given messages. The app itself uses /api/chats/{id}/send."""
+    conf = ready()
+    if isinstance(conf, JSONResponse):
+        return conf
     history = [m.model_dump() for m in body.messages]
 
     async def events():
-        async for chunk in agent.run(name, key, model, history):
+        async for chunk in agent.run(*conf, history):
             yield sse(chunk)
 
-    return StreamingResponse(events(), media_type="text/event-stream",
-                             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+    return StreamingResponse(events(), media_type="text/event-stream", headers=STREAM_HEADERS)
 
 
 class SavedChat(BaseModel):
@@ -190,28 +200,77 @@ class SavedChat(BaseModel):
 
 @app.get("/api/chats")
 async def list_chats():
-    return {"chats": chats.listing()}
+    live = runs.running_ids()
+    return {"chats": [{**c, "running": c["id"] in live} for c in chats.listing()]}
 
 
 @app.get("/api/chats/{chat_id}")
 async def get_chat(chat_id: str):
     doc = chats.load(chat_id) if chats.valid(chat_id) else None
-    return doc or err(404, "No such chat.")
+    if not doc:
+        return err(404, "No such chat.")
+    return {**doc, "running": bool(runs.get(chat_id))}
 
 
 @app.put("/api/chats/{chat_id}")
 async def put_chat(chat_id: str, body: SavedChat):
     if not chats.valid(chat_id):
         return err(400, "Bad chat id.")
+    if runs.get(chat_id):
+        return err(409, "This chat is busy replying.")
     try:
         return chats.save(chat_id, body.messages)
     except ValueError as e:
         return err(413, str(e))
 
 
+class SendIn(BaseModel):
+    content: str = Field(min_length=1, max_length=100_000)
+
+
+@app.post("/api/chats/{chat_id}/send")
+async def send_to_chat(chat_id: str, body: SendIn):
+    if not chats.valid(chat_id):
+        return err(400, "Bad chat id.")
+    if runs.get(chat_id):
+        return err(409, "Lark is still replying in this chat.")
+    conf = ready()
+    if isinstance(conf, JSONResponse):
+        return conf
+    doc = chats.load(chat_id) or {"messages": []}
+    messages = doc["messages"] + [{"role": "user", "content": body.content.strip()}]
+    try:
+        chats.save(chat_id, messages)
+    except ValueError as e:
+        return err(413, str(e))
+    history = [{"role": m["role"], "content": m["content"]} for m in messages if m.get("content")]
+    runs.start(chat_id, *conf, history)
+    return {"ok": True}
+
+
+@app.get("/api/chats/{chat_id}/events")
+async def chat_events(chat_id: str):
+    run = runs.get(chat_id) if chats.valid(chat_id) else None
+
+    async def events():
+        if not run:
+            yield runs.sse({"idle": True})
+            return
+        async for ev in run.stream():
+            yield runs.sse(ev)
+
+    return StreamingResponse(events(), media_type="text/event-stream", headers=STREAM_HEADERS)
+
+
+@app.post("/api/chats/{chat_id}/stop")
+async def stop_chat(chat_id: str):
+    return {"ok": bool(chats.valid(chat_id) and runs.stop(chat_id))}
+
+
 @app.delete("/api/chats/{chat_id}")
 async def delete_chat(chat_id: str):
     if chats.valid(chat_id):
+        runs.stop(chat_id, discard=True)
         chats.delete(chat_id)
     return {"ok": True}
 
@@ -221,9 +280,11 @@ async def sandbox_status():
     if not sandbox.configured():
         return {"configured": False}
     try:
-        return {"configured": True, "ok": True, **await sandbox.health()}
+        return {"configured": True, "ok": True, "reset_available": bool(os.environ.get("LARK_SANDBOX_RESET_FILE")),
+                **await sandbox.health()}
     except sandbox.SandboxError as e:
-        return {"configured": True, "ok": False, "error": str(e)}
+        return {"configured": True, "ok": False, "reset_available": bool(os.environ.get("LARK_SANDBOX_RESET_FILE")),
+                "error": str(e)}
 
 
 @app.post("/api/sandbox/wipe")
@@ -234,6 +295,19 @@ async def sandbox_wipe():
         await sandbox.wipe()
     except sandbox.SandboxError as e:
         return err(502, str(e))
+    return {"ok": True}
+
+
+@app.post("/api/sandbox/reset")
+async def sandbox_reset():
+    """Full reset: the container is recreated from a clean image by a root-owned unit on the server."""
+    path = os.environ.get("LARK_SANDBOX_RESET_FILE")
+    if not path:
+        return err(400, "Full reset isn't set up. Run sandbox/sandbox.sh install-reset on the server.")
+    try:
+        Path(path).write_text("reset\n")
+    except OSError:
+        return err(500, "Couldn't ask the server to reset the sandbox.")
     return {"ok": True}
 
 

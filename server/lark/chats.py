@@ -29,7 +29,7 @@ def _title(messages: list[dict]) -> str:
     return "New chat"
 
 
-def save(chat_id: str, messages: list[dict]) -> dict:
+def save(chat_id: str, messages: list[dict], error: str | None = None) -> dict:
     path = _dir() / f"{chat_id}.json"
     created = time.time()
     if path.exists():
@@ -38,6 +38,8 @@ def save(chat_id: str, messages: list[dict]) -> dict:
         except ValueError:
             pass
     doc = {"id": chat_id, "title": _title(messages), "created": created, "updated": time.time(), "messages": messages}
+    if error:
+        doc["error"] = error
     data = json.dumps(doc)
     if len(data) > MAX_BYTES:
         raise ValueError("This chat is too large to save.")

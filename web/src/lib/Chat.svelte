@@ -64,6 +64,7 @@
       {:else}
         {@const live = chat.busy && m === chat.messages.at(-1)}
         {@const lastPart = m.parts?.at(-1)}
+        {@const active = (m.parts ?? []).filter((p) => p.type === "tool" && p.state === "running")}
         <div class="turn">
           {#each m.parts ?? [{ type: "text", text: m.content }] as p}
             {#if p.type === "text"}
@@ -73,7 +74,7 @@
             {/if}
           {/each}
           {#if live && lastPart?.type !== "text"}
-            <ToolStatus tool={lastPart?.state === "running" ? lastPart : null} />
+            <ToolStatus tool={active.length ? { ...active[0], detail: active.length > 1 ? `${active[0].detail} +${active.length - 1} more` : active[0].detail } : null} />
           {/if}
         </div>
       {/if}
