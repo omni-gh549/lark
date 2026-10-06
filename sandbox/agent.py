@@ -38,12 +38,15 @@ SNAPSHOT_JS = """() => {
     const r = e.getBoundingClientRect(), cs = getComputedStyle(e);
     if (r.width < 2 || r.height < 2 || cs.visibility === 'hidden' || cs.display === 'none' || e.disabled) continue;
     if (e.type === 'hidden') continue;
+    if (r.bottom < 0 || r.right < 0 || r.top > innerHeight || r.left > innerWidth) { /* off-screen: still clickable after scrolling */ }
+    const hit = document.elementFromPoint(Math.min(Math.max(r.left + r.width / 2, 0), innerWidth - 1), Math.min(Math.max(r.top + r.height / 2, 0), innerHeight - 1));
+    const covered = r.top >= 0 && r.bottom <= innerHeight && hit && hit !== e && !e.contains(hit) && !hit.contains(e);
     const n = els.length + 1;
     e.setAttribute('data-lark', n);
     const tag = e.tagName.toLowerCase();
     const label = (e.getAttribute('aria-label') || e.innerText || e.placeholder || e.title || e.name || e.value || '')
       .trim().replace(/\\s+/g, ' ').slice(0, 80);
-    els.push({ n, kind: tag === 'a' ? 'link' : tag === 'input' ? (e.type || 'text') : tag, label,
+    els.push({ n, covered: !!covered, cover: covered ? (hit.getAttribute('aria-label') || hit.id || hit.className || hit.tagName).toString().slice(0, 40) : '', kind: tag === 'a' ? 'link' : tag === 'input' ? (e.type || 'text') : tag, label,
       href: tag === 'a' ? e.getAttribute('href') : null,
       value: ['input', 'textarea', 'select'].includes(tag) && e.type !== 'password' ? String(e.value || '').slice(0, 40) : null });
     if (els.length >= 80) break;
@@ -126,7 +129,8 @@ class Browser:
         for e in d["els"]:
             extra = f" -> {e['href']}" if e["href"] else ""
             val = f" = {e['value']!r}" if e["value"] else ""
-            lines.append(f"[{e['n']}] {e['kind']} {e['label']!r}{val}{extra}")
+            cov = f" (covered by {e['cover']!r}; deal with that first)" if e.get("covered") else ""
+            lines.append(f"[{e['n']}] {e['kind']} {e['label']!r}{val}{extra}{cov}")
         if not d["els"]:
             lines.append("(none)")
         return "\n".join(lines)
@@ -155,8 +159,11 @@ class Browser:
                     await target.click(timeout=2500)
                 except Exception:
                     # Playwright waits for the element to be unobscured and still; pages with overlays or
-                    # animations stall it, so after a short wait click anyway.
-                    await target.click(timeout=2500, force=True)
+                    # animations stall it, so after a short wait click anyway, then fall back to a script click.
+                    try:
+                        await target.click(timeout=2000, force=True)
+                    except Exception:
+                        await target.evaluate("e => e.click()")
             else:
                 await target.fill(str(a.get("text", "")), timeout=4000)
                 if a.get("submit"):
