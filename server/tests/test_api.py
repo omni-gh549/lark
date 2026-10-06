@@ -118,7 +118,7 @@ os.environ.update(LARK_SANDBOX_URL="http://127.0.0.1:8796", LARK_SANDBOX_TOKEN="
 st = c.get("/api/sandbox").json()
 run("sandbox status ok", st["configured"] and st["ok"])
 ev = chat("tools")
-run("sandbox tools offered", "".join(e.get("text", "") for e in ev) == "web_search,run_command,read_file,write_file,browser,subagent")
+run("sandbox tools offered", "".join(e.get("text", "") for e in ev) == "web_search,run_command,read_file,write_file,show_image,browser,subagent")
 ev = chat("run echo hi && exit 2")
 run("run_command output and exit code", "hi" in ev[1]["tool_end"]["output"] and "exit code 2" in ev[1]["tool_end"]["output"])
 os.environ["LARK_SANDBOX_TOKEN"] = "wrong"
@@ -180,6 +180,47 @@ def wait_idle(cid, secs=15):
         time.sleep(0.1)
     run("run finished in time", False)
 
+
+# images: upload, serve, vision input
+PNG = bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63fcffff3f0300050001a5f645400000000049454e44ae426082")
+r = c.post("/api/uploads", content=PNG, headers={"content-type": "image/png"})
+img = r.json().get("id", "")
+run("png upload accepted", r.status_code == 200 and img.endswith(".png"))
+run("uploaded file served with type", c.get(f"/api/files/{img}").content == PNG and c.get(f"/api/files/{img}").headers["content-type"] == "image/png")
+run("non-image upload refused", c.post("/api/uploads", content=b"<svg onload=alert(1)>", headers={"content-type": "image/png"}).status_code == 400)
+run("bad file names refused", b"openrouter" not in c.get("/api/files/..%2f..%2fsettings.json").content and c.get("/api/files/abc.png").status_code == 404)
+c.post("/api/chats/img-test-0001/send", json={"content": "what is this", "images": [img, "ffffffffffffffffffffffffffffffff.png"]})
+wait_idle("img-test-0001")
+doc = c.get("/api/chats/img-test-0001").json()
+run("image stored on the message, unknown ids dropped", doc["messages"][0]["images"] == [img])
+run("model received the image as vision input", doc["messages"][1]["content"] == "Saw: vision 1 what is this")
+c.post("/api/chats/img-test-0001/send", json={"content": "", "images": []})
+run("image-only message allowed", c.post("/api/chats/img-test-0002/send", json={"content": "", "images": [img]}).status_code == 200)
+wait_idle("img-test-0002")
+
+# Lark shows an image from the sandbox
+import base64 as _b64  # noqa: E402
+asyncio.run(_tools.run_command({"command": f"echo {_b64.b64encode(PNG).decode()} | base64 -d > /home/lark/pic.png || echo {_b64.b64encode(PNG).decode()} | base64 -d > pic.png"}))
+c.post("/api/chats/img-test-0003/send", json={"content": "show pic.png"})
+wait_idle("img-test-0003")
+part = c.get("/api/chats/img-test-0003").json()["messages"][1]["parts"][0]
+run("show_image attaches a stored copy", part["title"] == "Show image" and len(part["images"]) == 1
+    and c.get("/api/files/" + part["images"][0]).content == PNG)
+c.post("/api/chats/img-test-0004/send", json={"content": "show nothing.png"})
+wait_idle("img-test-0004")
+run("show_image on a missing file is a tool error", c.get("/api/chats/img-test-0004").json()["messages"][1]["parts"][0]["state"] == "error")
+
+# live browser view and screenshots
+c.post("/api/chats/img-test-0005/send", json={"content": "shot"})
+wait_idle("img-test-0005", 30)
+part = c.get("/api/chats/img-test-0005").json()["messages"][1]["parts"][0]
+run("browser screenshot is shown as an image", part["title"] == "Browser" and len(part.get("images", [])) == 1
+    and c.get("/api/files/" + part["images"][0]).content[:3] == b"\xff\xd8\xff")
+import lark.main as _main  # noqa: E402
+_main.STREAM_SECONDS = 1.5
+with c.stream("GET", "/api/browser/stream") as r:
+    first = b"".join(r.iter_bytes())
+run("live view streams jpeg frames", r.headers["content-type"].startswith("multipart/x-mixed-replace") and b"image/jpeg" in first)
 
 # subagents (two in parallel) through the stateless endpoint
 ev = chat("delegate alpha, beta")
@@ -252,7 +293,7 @@ time.sleep(0.4)
 c.delete("/api/chats/run-test-0004")
 time.sleep(0.6)
 run("deleting a running chat doesn't bring it back", c.get("/api/chats/run-test-0004").status_code == 404)
-run("send without setup is a clear 400", c.post("/api/chats/run-test-0005/send", json={"content": ""}).status_code == 422)
+run("empty send is refused", c.post("/api/chats/run-test-0005/send", json={"content": ""}).status_code == 400)
 
 run("full reset not offered by default", c.post("/api/sandbox/reset").status_code == 400)
 os.environ["LARK_SANDBOX_RESET_FILE"] = str(Path(DATA) / "reset-request")

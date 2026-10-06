@@ -5,8 +5,6 @@ from datetime import datetime, timezone
 
 from . import providers, tools
 
-MAX_ROUNDS = 12
-SUB_ROUNDS = 8
 MAX_PARALLEL = 4  # tool calls and subagents running at once
 
 BASE_PROMPT = "You are Lark, a personal assistant. Be direct and concise."
@@ -44,7 +42,7 @@ def system_prompt(available: list[tools.Tool], sub: bool = False) -> str:
 async def _subagent(name: str, key: str, model: str, task: str, steps: list[str]) -> str:
     inner = await tools.available()
     answer = ""
-    async for ev in loop(name, key, model, [{"role": "user", "content": task}], inner, SUB_ROUNDS, sub=True):
+    async for ev in loop(name, key, model, [{"role": "user", "content": task}], inner, None, sub=True):
         if "text" in ev:
             answer += ev["text"]
         elif "tool_start" in ev:
@@ -60,7 +58,7 @@ async def run(name: str, key: str, model: str, history: list[dict]):
     available = await tools.available()
     if available:
         available = available + [SUBAGENT]
-    async for ev in loop(name, key, model, history, available, MAX_ROUNDS):
+    async for ev in loop(name, key, model, history, available, None):
         yield ev
 
 
@@ -70,7 +68,9 @@ async def loop(name, key, model, history, available, max_rounds, sub=False):
     messages = [{"role": "system", "content": system_prompt(available, sub)}] + history
     gate = asyncio.Semaphore(MAX_PARALLEL)
 
-    for _ in range(max_rounds):
+    rounds = 0
+    while max_rounds is None or rounds < max_rounds:
+        rounds += 1
         calls = None
         async for ev in providers.stream_round(name, key, model, messages, specs):
             if "tool_calls" in ev:
@@ -90,31 +90,36 @@ async def loop(name, key, model, history, available, max_rounds, sub=False):
             for c in calls]})
 
         async def execute(c):
-            """Returns (ok, result, steps)."""
+            """Returns (ok, result, extra) where extra may hold "steps" and "images" for the UI."""
             tool = by_name.get(c["name"])
             steps: list[str] = []
+            extra: dict = {}
             try:
                 args = json.loads(c["arguments"] or "{}")
                 if not isinstance(args, dict):
                     raise ValueError
             except ValueError:
-                return False, "Arguments were not valid JSON.", steps
+                return False, "Arguments were not valid JSON.", extra
             if not tool:
-                return False, f"Unknown tool '{c['name']}'.", steps
+                return False, f"Unknown tool '{c['name']}'.", extra
             async with gate:
                 try:
                     if tool is SUBAGENT:
                         task = args.get("task")
                         if not isinstance(task, str) or not task.strip():
                             raise tools.ToolError("Missing 'task'.")
-                        return True, tools.clip(await _subagent(name, key, model, task, steps)), steps
-                    return True, await tool.run(args), steps
+                        result = tools.clip(await _subagent(name, key, model, task, steps))
+                        return True, result, {"steps": steps}
+                    out = await tool.run(args)
+                    if isinstance(out, tuple):
+                        return True, out[0], {"images": out[1]}
+                    return True, out, extra
                 except tools.ToolError as e:
-                    return False, str(e), steps
+                    return False, str(e), extra
                 except asyncio.CancelledError:
                     raise
                 except Exception:
-                    return False, "The tool failed unexpectedly.", steps
+                    return False, "The tool failed unexpectedly.", extra
 
         parsed = []
         for c in calls:
@@ -137,11 +142,13 @@ async def loop(name, key, model, history, available, max_rounds, sub=False):
                 done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
                 for t in done:
                     c = tasks[t]
-                    ok, result, steps = t.result()
+                    ok, result, extra = t.result()
                     results[c["id"]] = result
                     end = {"id": c["id"], "ok": ok, "output": tools.clip(result, 4000)}
-                    if steps:
-                        end["steps"] = steps[:20]
+                    if extra.get("steps"):
+                        end["steps"] = extra["steps"][:20]
+                    if extra.get("images"):
+                        end["images"] = extra["images"]
                     yield {"tool_end": end}
         finally:
             for t in tasks:

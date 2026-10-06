@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import agent, auth, chats, providers, runs, sandbox, search, vault
+from . import agent, auth, chats, files, providers, runs, sandbox, search, vault
 
 KEY_NAMES = set(providers.PROVIDERS) | set(search.SEARCH_PROVIDERS)
 DIST = Path(os.environ.get("LARK_DIST", Path(__file__).resolve().parents[2] / "web" / "dist"))
@@ -225,7 +225,27 @@ async def put_chat(chat_id: str, body: SavedChat):
 
 
 class SendIn(BaseModel):
-    content: str = Field(min_length=1, max_length=100_000)
+    content: str = Field(default="", max_length=100_000)
+    images: list[str] = Field(default=[], max_length=8)  # file names from /api/uploads
+
+
+RECENT_WITH_IMAGES = 8  # older images are dropped from what the model sees, to keep requests small
+
+
+def model_history(messages: list[dict]) -> list[dict]:
+    out = []
+    cutoff = len(messages) - RECENT_WITH_IMAGES
+    for i, m in enumerate(messages):
+        text = m.get("content") or ""
+        urls = [u for u in (files.data_url(n) for n in m.get("images", [])) if u] if i >= cutoff else []
+        if not text and not m.get("images"):
+            continue
+        if urls:
+            content = [{"type": "text", "text": text or "(image)"}] + [{"type": "image_url", "image_url": {"url": u}} for u in urls]
+        else:
+            content = text or "(image)"
+        out.append({"role": m["role"], "content": content})
+    return out
 
 
 @app.post("/api/chats/{chat_id}/send")
@@ -237,14 +257,19 @@ async def send_to_chat(chat_id: str, body: SendIn):
     conf = ready()
     if isinstance(conf, JSONResponse):
         return conf
+    images = [n for n in body.images if files.path(n)]
+    if not body.content.strip() and not images:
+        return err(400, "Write a message or attach an image.")
     doc = chats.load(chat_id) or {"messages": []}
-    messages = doc["messages"] + [{"role": "user", "content": body.content.strip()}]
+    user = {"role": "user", "content": body.content.strip()}
+    if images:
+        user["images"] = images
+    messages = doc["messages"] + [user]
     try:
         chats.save(chat_id, messages)
     except ValueError as e:
         return err(413, str(e))
-    history = [{"role": m["role"], "content": m["content"]} for m in messages if m.get("content")]
-    runs.start(chat_id, *conf, history)
+    runs.start(chat_id, *conf, model_history(messages))
     return {"ok": True}
 
 
@@ -296,6 +321,53 @@ async def sandbox_wipe():
     except sandbox.SandboxError as e:
         return err(502, str(e))
     return {"ok": True}
+
+
+@app.post("/api/uploads")
+async def upload(request: Request):
+    """A single image as the raw request body. Returns the stored file name."""
+    if int(request.headers.get("content-length") or 0) > files.MAX_BYTES:
+        return err(413, "That image is too large (8 MB max).")
+    data = await request.body()
+    try:
+        return {"id": files.save(data)}
+    except files.FileError as e:
+        return err(400 if len(data) <= files.MAX_BYTES else 413, str(e))
+
+
+@app.get("/api/files/{name}")
+async def get_file(name: str):
+    p = files.path(name)
+    if not p:
+        return err(404, "No such file.")
+    return FileResponse(p, media_type=files.mime(name), headers={
+        "Cache-Control": "private, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff"})
+
+
+STREAM_SECONDS = 15 * 60  # how long one live-view connection stays open before the page reconnects
+
+
+@app.get("/api/browser/stream")
+async def browser_stream(request: Request):
+    """The sandbox browser as a live MJPEG stream (a few frames a second while a page is open)."""
+    if not sandbox.configured():
+        return err(404, "No sandbox.")
+    boundary = "frame"
+
+    async def frames():
+        end = asyncio.get_event_loop().time() + STREAM_SECONDS
+        yield f"--{boundary}\r\n".encode()
+        while asyncio.get_event_loop().time() < end:
+            if await request.is_disconnected():
+                return
+            data = await sandbox.frame()
+            if data:
+                # Browsers paint a part once the next one starts arriving, so unchanged frames are resent
+                # (a few KB each) rather than leaving the last one stuck behind a quiet connection.
+                yield (f"Content-Type: image/jpeg\r\nContent-Length: {len(data)}\r\n\r\n").encode() + data + f"\r\n--{boundary}\r\n".encode()
+            await asyncio.sleep(0.35)
+
+    return StreamingResponse(frames(), media_type=f"multipart/x-mixed-replace; boundary={boundary}", headers=STREAM_HEADERS)
 
 
 @app.post("/api/sandbox/reset")

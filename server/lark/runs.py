@@ -74,8 +74,9 @@ def assistant_message(events: list[dict]) -> dict | None:
             for p in parts:
                 if p["type"] == "tool" and p["id"] == ev["tool_end"]["id"]:
                     p.update(state="ok" if ev["tool_end"]["ok"] else "error", output=ev["tool_end"]["output"])
-                    if ev["tool_end"].get("steps"):
-                        p["steps"] = ev["tool_end"]["steps"]
+                    for k in ("steps", "images"):
+                        if ev["tool_end"].get(k):
+                            p[k] = ev["tool_end"][k]
     for p in parts:
         if p["type"] == "tool" and p["state"] == "running":
             p["state"] = "error"

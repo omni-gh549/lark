@@ -16,9 +16,17 @@ IMG=lark-sandbox:latest
 SUBNET=172.30.0.0/24
 PORT=8791
 ENV_FILE=${LARK_ENV_FILE:-/etc/lark/lark.env}
-MEM=${SANDBOX_MEM:-768m}
-CPUS=${SANDBOX_CPUS:-1}
-PIDS=${SANDBOX_PIDS:-256}
+
+# Limits come from the environment, else from the env file (so a reset keeps them), else these defaults.
+cfg() { # NAME default
+  local v="${!1:-}"
+  [ -n "$v" ] || v=$(grep -s "^$1=" "$ENV_FILE" | cut -d= -f2- || true)
+  echo "${v:-$2}"
+}
+MEM=$(cfg SANDBOX_MEM 1g)
+SWAP=$(cfg SANDBOX_SWAP "$MEM")   # total memory + swap; equal to MEM means no swap
+CPUS=$(cfg SANDBOX_CPUS 1)
+PIDS=$(cfg SANDBOX_PIDS 256)
 
 token() {
   local t
@@ -41,7 +49,7 @@ create() {
   docker rm -f "$NAME" >/dev/null 2>&1 || true
   docker run -d --name "$NAME" --restart unless-stopped \
     --network "$NET" -p 127.0.0.1:$PORT:$PORT \
-    --shm-size 256m --memory "$MEM" --memory-swap "$MEM" --cpus "$CPUS" --pids-limit "$PIDS" \
+    --shm-size 256m --memory "$MEM" --memory-swap "$SWAP" --cpus "$CPUS" --pids-limit "$PIDS" \
     --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add SETUID --cap-add SETGID --cap-add KILL \
     --security-opt no-new-privileges \
     -e SANDBOX_TOKEN="$tok" -v "$VOL":/home/lark "$IMG" >/dev/null

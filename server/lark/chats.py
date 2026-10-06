@@ -26,7 +26,7 @@ def _title(messages: list[dict]) -> str:
         if m.get("role") == "user" and m.get("content"):
             text = " ".join(str(m["content"]).split())
             return text[:60] + ("…" if len(text) > 60 else "")
-    return "New chat"
+    return "Image" if any(m.get("images") for m in messages) else "New chat"
 
 
 def save(chat_id: str, messages: list[dict], error: str | None = None) -> dict:

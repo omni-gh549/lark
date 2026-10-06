@@ -84,6 +84,7 @@ function apply(reply, event) {
     if (part) {
       Object.assign(part, { state: event.tool_end.ok ? "ok" : "error", output: event.tool_end.output });
       if (event.tool_end.steps) part.steps = event.tool_end.steps;
+      if (event.tool_end.images) part.images = event.tool_end.images;
     }
   }
 }
@@ -182,16 +183,16 @@ export async function stop() {
   if (chat.id) await api(`/api/chats/${chat.id}/stop`, { method: "POST" }).catch(() => {});
 }
 
-export async function send(text) {
-  if (chat.busy || !text.trim()) return;
+export async function send(text, images = []) {
+  if (chat.busy || (!text.trim() && !images.length)) return;
   const id = (chat.id ??= crypto.randomUUID());
   remember(id);
   // always go through chat.messages: pushing to a local copy of the array wouldn't update the page
   chat.messages = chat.messages.filter((m) => !m.error);
-  chat.messages.push({ role: "user", content: text.trim() });
+  chat.messages.push({ role: "user", content: text.trim(), ...(images.length ? { images } : {}) });
   chat.busy = true;
   try {
-    await api(`/api/chats/${id}/send`, { method: "POST", body: { content: text.trim() } });
+    await api(`/api/chats/${id}/send`, { method: "POST", body: { content: text.trim(), images } });
   } catch (e) {
     chat.busy = false;
     if (e.status === 401) await loadSettings();

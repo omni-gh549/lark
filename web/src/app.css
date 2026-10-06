@@ -222,7 +222,7 @@ main { min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); grid-te
 }
 .composer textarea {
   flex: 1; min-width: 0; resize: none; border: 0; outline: 0; background: none;
-  padding: 9px 0; max-height: 160px;
+  padding: 9px 0; line-height: 22px; height: 40px; min-height: 40px; max-height: 160px; display: block;
 }
 .composer textarea::placeholder { color: var(--ink-soft); }
 .send { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--on-accent); flex: none; }
@@ -268,3 +268,27 @@ main { min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); grid-te
 @media (hover: none) { .history-del { opacity: 0.7; } }
 .steps { margin: 0; padding: 0 12px 4px 28px; font: 12px/1.6 var(--mono); color: var(--ink-soft); }
 .history-pick .dot { display: inline-block; width: 6px; height: 6px; margin-right: 4px; }
+
+/* attachments */
+.attach { width: 36px; height: 36px; margin: 2px 0 2px -8px; border-radius: 50%; display: grid; place-items: center; color: var(--ink-soft); flex: none; }
+.attach:hover { background: var(--glass-strong); color: var(--ink); }
+.attach svg { width: 19px; height: 19px; }
+.attached { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding: 0 6px 10px; }
+.thumb { position: relative; width: 56px; height: 56px; border-radius: 14px; overflow: hidden; background: var(--glass-strong); }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb.loading { animation: pulse 1.2s ease-in-out infinite; }
+.thumb button { position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: rgba(0, 0, 0, 0.55); color: #fff; }
+.thumb button svg { width: 12px; height: 12px; }
+.pics { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.pics img { max-width: 220px; max-height: 220px; border-radius: 12px; display: block; }
+.msg.me:has(.pics) { white-space: normal; }
+.shot img { max-width: min(520px, 100%); border-radius: 16px; display: block; background: var(--glass); }
+
+/* the live browser */
+.window { width: min(560px, 100%); border-radius: 16px; overflow: hidden; background: var(--glass-strong); box-shadow: 0 8px 28px rgba(0, 0, 0, 0.1); }
+.window-bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--glass); font-size: 12px; color: var(--ink-soft); }
+.lights { display: flex; gap: 5px; }
+.lights i { width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+.window-url { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); text-align: center; }
+.window-view { aspect-ratio: 16 / 10; background: var(--glass); }
+.window-view img { width: 100%; height: 100%; object-fit: contain; display: block; }

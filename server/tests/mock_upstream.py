@@ -33,6 +33,9 @@ async def chat(request: Request):
     body = await request.json()
     last_msg = body["messages"][-1]
     last = last_msg["content"]
+    if isinstance(last, list):  # vision input: report how many images arrived
+        n = sum(1 for p in last if p.get("type") == "image_url" and p["image_url"]["url"].startswith("data:image/"))
+        last = f"vision {n} " + " ".join(p.get("text", "") for p in last if p.get("type") == "text")
 
     def call(name, args, i=0):
         chunks = [{"index": i, "id": f"call_{i + 1}", "type": "function", "function": {"name": name, "arguments": ""}},
@@ -59,6 +62,27 @@ async def chat(request: Request):
             return
         if last.startswith("search ") and "web_search" in names:
             for c in call("web_search", {"query": last[7:]}):
+                yield c
+            yield "data: [DONE]\n\n"
+            return
+        if last == "slowbrowse" and "browser" in names:
+            for c in call("browser", {"action": "goto", "url": "http://127.0.0.1:8899/index.html"}, 0):
+                yield c
+            for c in call("run_command", {"command": "sleep 5"}, 1):
+                yield c
+            yield "data: [DONE]\n\n"
+            return
+        if last.startswith("vision "):
+            yield "data: " + json.dumps({"choices": [{"delta": {"content": "Saw: " + last}}]}) + "\n\n"
+            yield "data: [DONE]\n\n"
+            return
+        if last.startswith("show ") and "show_image" in names:
+            for c in call("show_image", {"path": last[5:]}):
+                yield c
+            yield "data: [DONE]\n\n"
+            return
+        if last.startswith("shot") and "browser" in names:
+            for c in call("browser", {"action": "screenshot"}):
                 yield c
             yield "data: [DONE]\n\n"
             return

@@ -38,9 +38,26 @@ async def write(path: str, content: str) -> dict:
     return await _call("PUT", "/file", json={"path": path, "content": content})
 
 
-async def browse(args: dict) -> str:
+async def browse(args: dict) -> dict:
+    """Returns {"snapshot": str, "image": base64 jpeg (screenshot action only)}."""
     keep = {k: args[k] for k in ("action", "url", "id", "text", "submit", "key", "direction") if k in args}
-    return (await _call("POST", "/browser", json=keep, timeout=100))["snapshot"]
+    return await _call("POST", "/browser", json=keep, timeout=100)
+
+
+async def frame() -> bytes | None:
+    """The live view's latest JPEG, or None when the browser isn't open."""
+    url = os.environ["LARK_SANDBOX_URL"].rstrip("/") + "/browser/frame"
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            r = await client.get(url, headers={"Authorization": f"Bearer {os.environ['LARK_SANDBOX_TOKEN']}"})
+    except httpx.HTTPError:
+        return None
+    return r.content if r.status_code == 200 and r.content else None
+
+
+async def read_binary(path: str) -> bytes:
+    import base64
+    return base64.b64decode((await _call("GET", "/file", params={"path": path, "binary": "1"}, timeout=30))["b64"])
 
 
 _features: dict = {"at": 0.0, "browser": False}

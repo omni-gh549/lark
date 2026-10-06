@@ -2,7 +2,9 @@
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
-from . import sandbox, search, vault
+import base64
+
+from . import files, sandbox, search, vault
 
 MAX_OUTPUT = 12_000
 
@@ -17,7 +19,7 @@ class Tool:
     title: str  # shown in the UI, e.g. "Web search"
     description: str
     parameters: dict
-    run: Callable[[dict], Awaitable[str]]
+    run: Callable[[dict], Awaitable]  # returns text, or (text, [image file names])
     detail: Callable[[dict], str]  # short line for the UI, e.g. the query
 
     def spec(self) -> dict:
@@ -91,14 +93,32 @@ async def write_file(args: dict) -> str:
     return f"Wrote {r.get('bytes', len(content))} bytes to {r.get('path')}."
 
 
-async def browser(args: dict) -> str:
+async def browser(args: dict):
     action = _str(args, "action")
-    if action not in ("goto", "click", "type", "press", "scroll", "back", "snapshot"):
+    if action not in ("goto", "click", "type", "press", "scroll", "back", "snapshot", "screenshot"):
         raise ToolError("Unknown action.")
     try:
-        return clip(await sandbox.browse(args), 9000)
+        r = await sandbox.browse(args)
     except sandbox.SandboxError as e:
         raise ToolError(str(e))
+    text = clip(r["snapshot"], 9000)
+    if r.get("image"):
+        name = files.save(base64.b64decode(r["image"]))
+        return text, [name]
+    return text
+
+
+async def show_image(args: dict):
+    path = _str(args, "path")
+    try:
+        data = await sandbox.read_binary(path)
+        name = files.save(data)
+    except sandbox.SandboxError as e:
+        raise ToolError(str(e))
+    except files.FileError as e:
+        raise ToolError(str(e))
+    caption = str(args.get("caption") or "").strip()
+    return (f"Showing {path} to the user." + (f" Caption: {caption}" if caption else "")), [name]
 
 
 def _browser_detail(a: dict) -> str:
@@ -143,12 +163,20 @@ BROWSER = Tool(
     "browser", "Browser",
     "Use a real web browser (headless Chromium in the sandbox). Every call returns a snapshot of the page: its text and a "
     "numbered list of links, buttons and fields. Actions: goto (url), click (id), type (id, text, optional submit), "
-    "press (key, e.g. Enter), scroll (direction up or down), back, snapshot. Element numbers only last until the next "
+    "press (key, e.g. Enter), scroll (direction up or down), back, snapshot, screenshot (shows the page to the user). Element numbers only last until the next "
     "action, so use the latest snapshot. Use it for pages that need clicking or logging in, or that search can't read.",
-    _obj({"action": {"type": "string", "enum": ["goto", "click", "type", "press", "scroll", "back", "snapshot"]},
+    _obj({"action": {"type": "string", "enum": ["goto", "click", "type", "press", "scroll", "back", "snapshot", "screenshot"]},
           "url": {"type": "string"}, "id": {"type": "integer"}, "text": {"type": "string"},
           "submit": {"type": "boolean"}, "key": {"type": "string"}, "direction": {"type": "string"}}, ["action"]),
     browser, _browser_detail)
+
+
+SHOW_IMAGE = Tool(
+    "show_image", "Show image",
+    "Show an image file from the sandbox (PNG, JPEG, GIF or WebP, up to 8 MB) to the user in the chat. "
+    "Use it for charts, renders and screenshots you made.",
+    _obj({"path": {"type": "string"}, "caption": {"type": "string"}}, ["path"]),
+    show_image, lambda a: str(a.get("path", "")))
 
 
 async def available() -> list[Tool]:
@@ -156,7 +184,7 @@ async def available() -> list[Tool]:
     if search_ready():
         tools.append(WEB_SEARCH)
     if sandbox.configured():
-        tools += [RUN_COMMAND, READ_FILE, WRITE_FILE]
+        tools += [RUN_COMMAND, READ_FILE, WRITE_FILE, SHOW_IMAGE]
         if await sandbox.has_browser():
             tools.append(BROWSER)
     return tools

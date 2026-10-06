@@ -3,6 +3,8 @@
 Endpoints (all need `Authorization: Bearer $SANDBOX_TOKEN`):
   POST /browser {action, ...}   GET  /health   POST /exec {command, timeout}   GET /file?path=   PUT /file {path, content}   POST /wipe
 """
+import asyncio
+import base64
 import hmac
 import json
 import os
@@ -11,7 +13,6 @@ import signal
 import subprocess
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -20,7 +21,7 @@ HOME = os.environ.get("SANDBOX_HOME", "/home/lark")
 PORT = int(os.environ.get("SANDBOX_PORT", "8791"))
 BIND = os.environ.get("SANDBOX_BIND", "0.0.0.0")
 MAX_OUTPUT = 200_000
-MAX_FILE = 2_000_000
+MAX_FILE = 8_000_000
 MAX_BODY = 4_000_000
 MAX_JOBS = 4
 jobs = threading.BoundedSemaphore(MAX_JOBS)
@@ -53,13 +54,18 @@ SNAPSHOT_JS = """() => {
 
 
 class Browser:
-    """One headless Chromium page, driven by element numbers. Playwright's sync API is bound to the thread
-    that created it, so every call runs on a single worker thread."""
+    """One headless Chromium page, driven by element numbers. It lives on its own asyncio loop so a screenshot
+    for the live view can be taken while an action (a slow page load, say) is still running."""
 
     def __init__(self):
-        self.pool = ThreadPoolExecutor(max_workers=1)
+        self.loop = asyncio.new_event_loop()
+        threading.Thread(target=self.loop.run_forever, daemon=True).start()
+        self.acting = asyncio.run_coroutine_threadsafe(self._make_lock(), self.loop).result()
         self.pw = self.browser = self.page = None
         self.last_used = 0.0
+
+    async def _make_lock(self):
+        return asyncio.Lock()
 
     def available(self) -> bool:
         if not os.path.exists(CHROME):
@@ -70,41 +76,48 @@ class Browser:
         except ImportError:
             return False
 
-    def _ensure(self):
+    async def _ensure(self):
         if self.page and self.browser.is_connected():
             return
-        self._close()
-        from playwright.sync_api import sync_playwright
-        self.pw = sync_playwright().start()
-        self.browser = self.pw.chromium.launch(executable_path=CHROME, headless=True, args=[
-            "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--mute-audio"])
-        ctx = self.browser.new_context(viewport={"width": 1280, "height": 800}, locale="en-GB")
-        # Lark reads text, so skip images, fonts and media: it saves a lot of memory and bandwidth
-        ctx.route("**/*", lambda r: r.abort() if r.request.resource_type in ("image", "media", "font") else r.continue_())
-        self.page = ctx.new_page()
+        await self._close()
+        from playwright.async_api import async_playwright
+        self.pw = await async_playwright().start()
+        self.browser = await self.pw.chromium.launch(executable_path=CHROME, headless=True, args=[
+            "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--mute-audio", "--disable-extensions",
+            "--disable-background-networking", "--js-flags=--max-old-space-size=384"])
+        ctx = await self.browser.new_context(viewport={"width": 1280, "height": 800}, locale="en-GB")
+
+        async def gate(route):
+            if route.request.resource_type == "media":  # no autoplaying video: it costs memory and tells Lark nothing
+                await route.abort()
+            else:
+                await route.continue_()
+
+        await ctx.route("**/*", gate)
+        self.page = await ctx.new_page()
         self.page.set_default_timeout(10000)
 
-    def _close(self):
+    async def _close(self):
         for obj, fn in ((self.browser, "close"), (self.pw, "stop")):
             try:
                 if obj:
-                    getattr(obj, fn)()
+                    await getattr(obj, fn)()
             except Exception:
                 pass
         self.pw = self.browser = self.page = None
 
     def close_if_idle(self):
         if self.page and time.time() - self.last_used > IDLE_CLOSE:
-            self.pool.submit(self._close)
+            asyncio.run_coroutine_threadsafe(self._close(), self.loop)
 
-    def _snapshot(self) -> str:
+    async def _snapshot(self) -> str:
         page = self.page
         try:
-            page.wait_for_load_state("domcontentloaded", timeout=5000)
-            page.wait_for_load_state("networkidle", timeout=2500)
+            await page.wait_for_load_state("domcontentloaded", timeout=5000)
+            await page.wait_for_load_state("networkidle", timeout=2500)
         except Exception:
             pass
-        d = page.evaluate(SNAPSHOT_JS)
+        d = await page.evaluate(SNAPSHOT_JS)
         lines = [f"URL: {d['url']}", f"Title: {d['title']}",
                  f"Scroll: {d['y']}/{max(d['height'] - d['view'], 0)}", "", "Page text:", d["text"].strip() or "(no text)", "",
                  "Interactive elements:"]
@@ -116,51 +129,70 @@ class Browser:
             lines.append("(none)")
         return "\n".join(lines)
 
-    def _act(self, a: dict) -> str:
-        self._ensure()
+    async def _act(self, a: dict) -> dict:
+        await self._ensure()
         page = self.page
         action = a.get("action")
+        out = {}
         if action == "goto":
             url = a.get("url") or ""
             if "://" not in url:
                 url = "https://" + url
             if not url.startswith(("http://", "https://")):
                 raise ValueError("Only http and https pages can be opened.")
-            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
         elif action in ("click", "type"):
             target = page.locator(f'[data-lark="{int(a.get("id"))}"]').first
-            if target.count() == 0:
+            if await target.count() == 0:
                 raise ValueError("No element with that number. Use the numbers from the latest snapshot.")
             if action == "click":
-                target.click(timeout=8000)
+                await target.click(timeout=8000)
             else:
-                target.fill(str(a.get("text", "")), timeout=8000)
+                await target.fill(str(a.get("text", "")), timeout=8000)
                 if a.get("submit"):
-                    target.press("Enter")
+                    await target.press("Enter")
         elif action == "press":
-            page.keyboard.press(str(a.get("key", "Enter")))
+            await page.keyboard.press(str(a.get("key", "Enter")))
         elif action == "scroll":
             dy = 700 if a.get("direction", "down") != "up" else -700
-            page.evaluate("dy => window.scrollBy(0, dy)", dy)
+            await page.evaluate("dy => window.scrollBy(0, dy)", dy)
         elif action == "back":
-            page.go_back(wait_until="domcontentloaded", timeout=15000)
+            await page.go_back(wait_until="domcontentloaded", timeout=15000)
+        elif action == "screenshot":
+            out["image"] = base64.b64encode(await page.screenshot(type="jpeg", quality=70, timeout=8000)).decode()
         elif action != "snapshot":
             raise ValueError("Unknown browser action.")
-        return self._snapshot()
+        out["snapshot"] = await self._snapshot()
+        return out
 
-    def do(self, a: dict) -> dict:
-        self.last_used = time.time()
-
-        def job():
+    async def _do(self, a: dict) -> dict:
+        async with self.acting:  # one action at a time
             try:
-                return {"snapshot": self._act(a)}
+                return await self._act(a)
             except Exception as e:  # playwright errors are long; keep the first line
                 msg = str(e).strip().split("\n")[0][:300] or type(e).__name__
                 return {"error": f"Browser error: {msg}"}
 
-        out = self.pool.submit(job).result(timeout=90)
+    def do(self, a: dict) -> dict:
+        self.last_used = time.time()
+        out = asyncio.run_coroutine_threadsafe(self._do(a), self.loop).result(timeout=90)
         self.last_used = time.time()
         return out
+
+    async def _frame(self):
+        if not self.page:
+            return None
+        try:
+            return await self.page.screenshot(type="jpeg", quality=55, timeout=4000)
+        except Exception:
+            return None
+
+    def frame(self) -> bytes | None:
+        """The current page as a small JPEG for the live view, or None when no page is open."""
+        try:
+            return asyncio.run_coroutine_threadsafe(self._frame(), self.loop).result(timeout=6)
+        except Exception:
+            return None
 
 
 browser = Browser()
@@ -227,6 +259,13 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def reply_bytes(self, code: int, data: bytes, ctype: str):
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def authed(self) -> bool:
         got = self.headers.get("Authorization", "")
         if hmac.compare_digest(got.encode(), f"Bearer {TOKEN}".encode()):
@@ -251,6 +290,11 @@ class Handler(BaseHTTPRequestHandler):
             if (method, url.path) == ("GET", "/health"):
                 return self.reply(200, {"home": HOME, "browser": browser.available(),
                                         "disk_free_mb": shutil.disk_usage(HOME if os.path.isdir(HOME) else "/").free // 2**20})
+            if (method, url.path) == ("GET", "/browser/frame"):
+                data = browser.frame() if browser.page else None
+                if not data:
+                    return self.reply_bytes(204, b"", "image/jpeg")
+                return self.reply_bytes(200, data, "image/jpeg")
             if (method, url.path) == ("POST", "/browser"):
                 if not browser.available():
                     return self.reply(501, {"error": "This sandbox has no browser. Rebuild it with sandbox.sh up."})
@@ -271,7 +315,10 @@ class Handler(BaseHTTPRequestHandler):
                 if os.path.getsize(path) > MAX_FILE:
                     return self.reply(413, {"error": "File is too large to read."})
                 with open(path, "rb") as f:
-                    return self.reply(200, {"path": path, "content": f.read().decode(errors="replace")})
+                    raw = f.read()
+                if parse_qs(url.query).get("binary"):
+                    return self.reply(200, {"path": path, "b64": base64.b64encode(raw).decode()})
+                return self.reply(200, {"path": path, "content": raw.decode(errors="replace")})
             if (method, url.path) == ("PUT", "/file"):
                 b = self.body()
                 if not isinstance(b.get("path"), str) or not isinstance(b.get("content"), str):
