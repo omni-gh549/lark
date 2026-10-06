@@ -1,7 +1,10 @@
 /* Layout: top bar (panels · mode switch · account), centred chat column, panels slide over from the left. */
 :root {
-  --sky-a: #c9d3dc;
-  --sky-b: #e4ddd2;
+  --bg: #e9e8e5;
+  --bg-1: #d3dbe3;
+  --bg-2: #e7ded2;
+  --bg-3: #dcdfd8;
+  --veil: rgba(233, 232, 229, 0.7);
   --ink: #1d2228;
   --ink-soft: #66707a;
   --glass: rgba(255, 255, 255, 0.55);
@@ -16,14 +19,16 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --sky-a: #151b26; --sky-b: #2a2633; --ink: #e8eaee; --ink-soft: #9aa2ad;
+    --bg: #111317; --bg-1: #1a2230; --bg-2: #221e1c; --bg-3: #181c1b;
+    --veil: rgba(17, 19, 23, 0.75); --ink: #e8eaee; --ink-soft: #9aa2ad;
     --glass: rgba(255, 255, 255, 0.07); --glass-strong: rgba(255, 255, 255, 0.13);
     --line: rgba(255, 255, 255, 0.09); --accent: #e8eaee; --on-accent: #151b26;
     --live: #5cc28c; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --sky-a: #151b26; --sky-b: #2a2633; --ink: #e8eaee; --ink-soft: #9aa2ad;
+  --bg: #111317; --bg-1: #1a2230; --bg-2: #221e1c; --bg-3: #181c1b;
+    --veil: rgba(17, 19, 23, 0.75); --ink: #e8eaee; --ink-soft: #9aa2ad;
   --glass: rgba(255, 255, 255, 0.07); --glass-strong: rgba(255, 255, 255, 0.13);
   --line: rgba(255, 255, 255, 0.09); --accent: #e8eaee; --on-accent: #151b26;
   --live: #5cc28c; color-scheme: dark;
@@ -35,7 +40,12 @@ html, body { height: 100%; margin: 0; }
 body {
   font: 15px/1.45 var(--font);
   color: var(--ink);
-  background: var(--sky-a) linear-gradient(115deg, var(--sky-a) 20%, var(--sky-b) 85%) fixed;
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(70% 60% at 10% 0%, var(--bg-1), transparent 70%),
+    radial-gradient(60% 70% at 100% 100%, var(--bg-2), transparent 70%),
+    radial-gradient(50% 50% at 75% 20%, var(--bg-3), transparent 70%);
+  background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
 }
 button, textarea { font: inherit; color: inherit; }
@@ -123,7 +133,12 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 @media (max-width: 760px) {
   .panels {
     left: 0; right: 0; bottom: 0; width: auto; padding: 0 16px 16px;
-    background: var(--sky-a) linear-gradient(115deg, var(--sky-a) 20%, var(--sky-b) 85%) fixed;
+    background-color: var(--bg);
+  background-image:
+    radial-gradient(70% 60% at 10% 0%, var(--bg-1), transparent 70%),
+    radial-gradient(60% 70% at 100% 100%, var(--bg-2), transparent 70%),
+    radial-gradient(50% 50% at 75% 20%, var(--bg-3), transparent 70%);
+  background-attachment: fixed;
   }
 }
 .new-panel { flex-direction: row; justify-content: center; align-items: center; gap: 8px; padding: 12px; }
