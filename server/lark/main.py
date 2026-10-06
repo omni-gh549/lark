@@ -391,11 +391,18 @@ async def sandbox_reset():
 
 
 if DIST.is_dir():
-    app.mount("/assets", StaticFiles(directory=DIST / "assets"), name="assets")
+    class Assets(StaticFiles):
+        async def get_response(self, path, scope):
+            res = await super().get_response(path, scope)
+            res.headers["Cache-Control"] = "public, max-age=31536000, immutable"  # file names carry a content hash
+            return res
+
+    app.mount("/assets", Assets(directory=DIST / "assets"), name="assets")
+    NO_CACHE = {"Cache-Control": "no-cache"}  # the page itself is revalidated, so a deploy shows on a normal refresh
 
     @app.get("/{path:path}")
     async def spa(path: str):
         file = (DIST / path).resolve()
         if path and DIST in file.parents and file.is_file():
-            return FileResponse(file)
-        return FileResponse(DIST / "index.html")
+            return FileResponse(file, headers=NO_CACHE)
+        return FileResponse(DIST / "index.html", headers=NO_CACHE)

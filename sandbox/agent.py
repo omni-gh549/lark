@@ -183,12 +183,13 @@ class Browser:
         return out
 
     async def _point(self, target, click: bool):
-        box = await target.bounding_box()
-        if not box:
-            return
-        size = self.page.viewport_size or {"width": 1280, "height": 800}
-        x = min(max((box["x"] + box["width"] / 2) / size["width"], 0), 1)
-        y = min(max((box["y"] + box["height"] / 2) / size["height"], 0), 1)
+        # The element's centre as a fraction of the visible page, measured in the page itself so it matches
+        # exactly what the screenshot shows.
+        pos = await target.evaluate("""e => {
+            const r = e.getBoundingClientRect();
+            return { x: (r.left + r.width / 2) / innerWidth, y: (r.top + r.height / 2) / innerHeight };
+        }""")
+        x, y = (min(max(float(pos[k]), 0), 1) for k in ("x", "y"))
         self.cursor = {"x": round(x, 4), "y": round(y, 4), "click": click, "seq": (self.cursor or {}).get("seq", 0) + 1}
 
     async def _do(self, a: dict) -> dict:
