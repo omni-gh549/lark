@@ -79,6 +79,8 @@ class Browser:
         self.browser = self.pw.chromium.launch(executable_path=CHROME, headless=True, args=[
             "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--mute-audio"])
         ctx = self.browser.new_context(viewport={"width": 1280, "height": 800}, locale="en-GB")
+        # Lark reads text, so skip images, fonts and media: it saves a lot of memory and bandwidth
+        ctx.route("**/*", lambda r: r.abort() if r.request.resource_type in ("image", "media", "font") else r.continue_())
         self.page = ctx.new_page()
         self.page.set_default_timeout(10000)
 
