@@ -91,6 +91,27 @@ async def write_file(args: dict) -> str:
     return f"Wrote {r.get('bytes', len(content))} bytes to {r.get('path')}."
 
 
+async def browser(args: dict) -> str:
+    action = _str(args, "action")
+    if action not in ("goto", "click", "type", "press", "scroll", "back", "snapshot"):
+        raise ToolError("Unknown action.")
+    try:
+        return clip(await sandbox.browse(args), 9000)
+    except sandbox.SandboxError as e:
+        raise ToolError(str(e))
+
+
+def _browser_detail(a: dict) -> str:
+    action = str(a.get("action", ""))
+    if action == "goto":
+        return str(a.get("url", ""))
+    if action == "click":
+        return f"click #{a.get('id', '')}"
+    if action == "type":
+        return f"type in #{a.get('id', '')}"
+    return action
+
+
 def _obj(props: dict, required: list[str]) -> dict:
     return {"type": "object", "properties": props, "required": required}
 
@@ -118,10 +139,24 @@ WRITE_FILE = Tool(
     write_file, lambda a: str(a.get("path", "")))
 
 
-def available() -> list[Tool]:
+BROWSER = Tool(
+    "browser", "Browser",
+    "Use a real web browser (headless Chromium in the sandbox). Every call returns a snapshot of the page: its text and a "
+    "numbered list of links, buttons and fields. Actions: goto (url), click (id), type (id, text, optional submit), "
+    "press (key, e.g. Enter), scroll (direction up or down), back, snapshot. Element numbers only last until the next "
+    "action, so use the latest snapshot. Use it for pages that need clicking or logging in, or that search can't read.",
+    _obj({"action": {"type": "string", "enum": ["goto", "click", "type", "press", "scroll", "back", "snapshot"]},
+          "url": {"type": "string"}, "id": {"type": "integer"}, "text": {"type": "string"},
+          "submit": {"type": "boolean"}, "key": {"type": "string"}, "direction": {"type": "string"}}, ["action"]),
+    browser, _browser_detail)
+
+
+async def available() -> list[Tool]:
     tools = []
     if search_ready():
         tools.append(WEB_SEARCH)
     if sandbox.configured():
         tools += [RUN_COMMAND, READ_FILE, WRITE_FILE]
+        if await sandbox.has_browser():
+            tools.append(BROWSER)
     return tools

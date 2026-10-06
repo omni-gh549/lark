@@ -60,6 +60,8 @@ cd /opt/lark/sandbox
 systemctl restart lark
 ```
 
+**Browser.** If the sandbox image includes Chromium (it does when built with `sandbox.sh up`), Lark can also drive a real browser: open pages, read them, click and type by element number. The browser shuts itself down after 5 idle minutes, since it is the biggest memory user (budget 300 to 500 MB).
+
 **Subagents.** When any tool is available, Lark can hand tasks to subagents (up to 4 at once, 8 steps each) that work with the same tools and report back.
 
 `./sandbox.sh reset` wipes the sandbox back to a clean image (Settings has a Reset everything button for this; `sandbox.sh up` installs a small systemd path unit so the unprivileged Lark service can ask for it without Docker access), `./sandbox.sh nuke` removes it. Settings has a button to clear its files without touching the container. Limits are `SANDBOX_MEM`, `SANDBOX_CPUS` and `SANDBOX_PIDS` (defaults 768m, 1, 256).

@@ -31,6 +31,9 @@ def system_prompt(available: list[tools.Tool], sub: bool = False) -> str:
     if "run_command" in names:
         lines.append("You have a persistent Linux sandbox. Use it to run code, check things and keep files. "
                      "Its files survive between conversations, but it may be reset, so tell the user what matters.")
+    if "browser" in names:
+        lines.append("You can browse the web with a real browser. Prefer web search for simple questions; use the browser to "
+                     "open pages, fill forms and click through sites. Never enter passwords or payment details unless the user gave them for this task.")
     if "subagent" in names:
         lines.append("You can delegate to subagents for research or long jobs, several at once. Check what they return before relying on it.")
     if available:
@@ -39,7 +42,7 @@ def system_prompt(available: list[tools.Tool], sub: bool = False) -> str:
 
 
 async def _subagent(name: str, key: str, model: str, task: str, steps: list[str]) -> str:
-    inner = tools.available()
+    inner = await tools.available()
     answer = ""
     async for ev in loop(name, key, model, [{"role": "user", "content": task}], inner, SUB_ROUNDS, sub=True):
         if "text" in ev:
@@ -54,7 +57,7 @@ async def _subagent(name: str, key: str, model: str, task: str, steps: list[str]
 
 async def run(name: str, key: str, model: str, history: list[dict]):
     """Yields UI events: text, tool_start, tool_end, error, done."""
-    available = tools.available()
+    available = await tools.available()
     if available:
         available = available + [SUBAGENT]
     async for ev in loop(name, key, model, history, available, MAX_ROUNDS):

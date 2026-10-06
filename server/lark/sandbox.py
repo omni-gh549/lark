@@ -38,6 +38,28 @@ async def write(path: str, content: str) -> dict:
     return await _call("PUT", "/file", json={"path": path, "content": content})
 
 
+async def browse(args: dict) -> str:
+    keep = {k: args[k] for k in ("action", "url", "id", "text", "submit", "key", "direction") if k in args}
+    return (await _call("POST", "/browser", json=keep, timeout=100))["snapshot"]
+
+
+_features: dict = {"at": 0.0, "browser": False}
+
+
+async def has_browser() -> bool:
+    """Whether the sandbox image includes a browser. Cached briefly so each chat turn doesn't probe it."""
+    import time
+    if not configured():
+        return False
+    if time.time() - _features["at"] > 60:
+        try:
+            _features["browser"] = bool((await health()).get("browser"))
+        except SandboxError:
+            _features["browser"] = False
+        _features["at"] = time.time()
+    return _features["browser"]
+
+
 async def health() -> dict:
     return await _call("GET", "/health")
 

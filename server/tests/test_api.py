@@ -32,7 +32,8 @@ for p in providers.PROVIDERS.values():
 search.SEARCH_PROVIDERS["brave"]["base"] = "http://127.0.0.1:8791/brave"
 sbx = subprocess.Popen([sys.executable, str(Path(__file__).resolve().parents[2] / "sandbox" / "agent.py")],
                        env={**os.environ, "SANDBOX_TOKEN": "tok-1", "SANDBOX_HOME": tempfile.mkdtemp(),
-                            "SANDBOX_PORT": "8796", "SANDBOX_BIND": "127.0.0.1"})
+                            "SANDBOX_PORT": "8796", "SANDBOX_BIND": "127.0.0.1",
+                            "SANDBOX_CHROMIUM": "/opt/pw-browsers/chromium"})
 time.sleep(1)
 
 c = TestClient(app, base_url="http://localhost")
@@ -117,7 +118,7 @@ os.environ.update(LARK_SANDBOX_URL="http://127.0.0.1:8796", LARK_SANDBOX_TOKEN="
 st = c.get("/api/sandbox").json()
 run("sandbox status ok", st["configured"] and st["ok"])
 ev = chat("tools")
-run("sandbox tools offered", "".join(e.get("text", "") for e in ev) == "web_search,run_command,read_file,write_file,subagent")
+run("sandbox tools offered", "".join(e.get("text", "") for e in ev) == "web_search,run_command,read_file,write_file,browser,subagent")
 ev = chat("run echo hi && exit 2")
 run("run_command output and exit code", "hi" in ev[1]["tool_end"]["output"] and "exit code 2" in ev[1]["tool_end"]["output"])
 os.environ["LARK_SANDBOX_TOKEN"] = "wrong"
@@ -134,6 +135,38 @@ try:
 except _tools.ToolError:
     gone = True
 run("wipe clears files", gone)
+# browser tool against a local page
+import http.server  # noqa: E402
+import functools  # noqa: E402
+site = Path(tempfile.mkdtemp())
+(site / "index.html").write_text('<title>Shop</title><a href="/two.html">Next page</a><input placeholder="Find"><button onclick="document.title=\'clicked\'">Go</button>')
+(site / "two.html").write_text("<title>Two</title><p>second page body</p>")
+httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 8898), functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(site)))
+threading.Thread(target=httpd.serve_forever, daemon=True).start()
+snap = asyncio.run(_tools.browser({"action": "goto", "url": "http://127.0.0.1:8898/index.html"}))
+run("browser snapshot lists elements", "Title: Shop" in snap and "[1] link 'Next page'" in snap and "[2] text 'Find'" in snap)
+snap = asyncio.run(_tools.browser({"action": "click", "id": 1}))
+run("browser click follows a link", "Title: Two" in snap and "second page body" in snap)
+asyncio.run(_tools.browser({"action": "back"}))
+snap = asyncio.run(_tools.browser({"action": "type", "id": 2, "text": "hello"}))
+run("browser types into a field", "= 'hello'" in snap)
+try:
+    asyncio.run(_tools.browser({"action": "click", "id": 77}))
+    bad = False
+except _tools.ToolError as e:
+    bad = "No element" in str(e)
+run("browser reports a missing element", bad)
+try:
+    asyncio.run(_tools.browser({"action": "goto", "url": "file:///etc/passwd"}))
+    bad = False
+except _tools.ToolError as e:
+    bad = "http and https" in str(e)
+run("browser refuses file urls", bad)
+ev = chat("tools")
+run("browser tool in the tool list", "browser" in "".join(e.get("text", "") for e in ev).split(","))
+httpd.shutdown()
+
+
 def sse_events(path):
     with c.stream("GET", path) as r:
         return [json.loads(l[5:]) for l in r.iter_lines() if l.startswith("data:")]

@@ -41,7 +41,7 @@ create() {
   docker rm -f "$NAME" >/dev/null 2>&1 || true
   docker run -d --name "$NAME" --restart unless-stopped \
     --network "$NET" -p 127.0.0.1:$PORT:$PORT \
-    --memory "$MEM" --memory-swap "$MEM" --cpus "$CPUS" --pids-limit "$PIDS" \
+    --shm-size 256m --memory "$MEM" --memory-swap "$MEM" --cpus "$CPUS" --pids-limit "$PIDS" \
     --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add SETUID --cap-add SETGID --cap-add KILL \
     --security-opt no-new-privileges \
     -e SANDBOX_TOKEN="$tok" -v "$VOL":/home/lark "$IMG" >/dev/null
