@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import secrets
 import tempfile
 import time
@@ -273,6 +274,19 @@ async def _start(chat_id: int, user: dict, payload: str):
     await say(chat_id, "Hi, I'm Lark, an AI assistant. That link isn't valid any more. Ask for a new one.")
 
 
+def _plain(text: str) -> str:
+    """Telegram shows plain text, so drop the markdown models like to add."""
+    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text, flags=re.S)
+    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.M)
+    return re.sub(r"`([^`\n]+)`", r"\1", text)
+
+
+def _pieces(reply: str) -> list[str]:
+    """One Telegram message per block separated by a line holding only ---."""
+    parts = [_plain(p).strip() for p in re.split(r"\n\s*---+\s*\n", f"\n{reply}\n")]
+    return [p for p in parts if p] or [reply.strip()]
+
+
 async def _from_owner(chat_id: int, text: str, photo):
     from . import main  # late: main imports this module
     if text == "/new":
@@ -320,7 +334,8 @@ async def _from_owner(chat_id: int, text: str, photo):
     reply = (last or {}).get("content", "").strip()
     if doc.get("error") and not reply:
         reply = doc["error"]
-    await say(chat_id, reply or "(No reply.)")
+    for piece in _pieces(reply or "(No reply.)"):
+        await say(chat_id, piece)
     for part in (last or {}).get("parts", []):
         for name in part.get("images", []) if part.get("type") == "tool" else []:
             try:

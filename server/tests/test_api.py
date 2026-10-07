@@ -412,6 +412,8 @@ run("agent message waits for approval", "approve" in r and "Running late" in msg
 c.put(f"/api/telegram/contacts/{sam}", json={"policy": "auto"})
 r = c.portal.call(telegram.message_contact, "Sam", "On my way")
 run("auto contact gets agent messages directly", msgs(333)[-1]["text"] == "On my way")
+run("replies split into several messages and lose markdown", telegram._pieces("**Hi** there\n---\nsecond one\n\n---\n# Third") == ["Hi there", "second one", "Third"])
+run("a single reply stays one message", telegram._pieces("just one") == ["just one"])
 from lark import files as _files  # noqa: E402
 png = _files.save(b"\x89PNG\r\n\x1a\n" + b"0" * 64)
 c.put(f"/api/telegram/contacts/{sam}", json={"policy": "draft"})
