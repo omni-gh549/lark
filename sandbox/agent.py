@@ -32,6 +32,36 @@ CHROME = os.environ.get("SANDBOX_CHROMIUM", "/usr/bin/chromium")
 STATE_FILE = os.path.join(os.environ.get("SANDBOX_HOME", "/home/lark"), ".browser-state.json")  # cookies and local storage
 IDLE_CLOSE = 300  # seconds; the browser is the memory hog, so it shuts down when unused
 
+def _proxy(url):
+    """Playwright wants the proxy's credentials apart from its address."""
+    if not url:
+        return None
+    from urllib.parse import unquote, urlparse
+    u = urlparse(url)
+    conf = {"server": f"{u.scheme or 'http'}://{u.hostname}{':' + str(u.port) if u.port else ''}"}
+    if u.username:
+        conf.update(username=unquote(u.username), password=unquote(u.password or ""))
+    return conf
+
+
+STEALTH_JS = """
+Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+Object.defineProperty(navigator, 'languages', { get: () => ['en-GB', 'en'] });
+Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5].map(i => ({ name: 'Plugin ' + i })) });
+if (!window.chrome) window.chrome = { runtime: {}, app: {}, loadTimes() {}, csi() {} };
+const _q = navigator.permissions && navigator.permissions.query;
+if (_q) navigator.permissions.query = p => p && p.name === 'notifications' ? Promise.resolve({ state: Notification.permission === 'default' ? 'prompt' : Notification.permission }) : _q.call(navigator.permissions, p);
+for (const C of [WebGLRenderingContext, typeof WebGL2RenderingContext !== 'undefined' ? WebGL2RenderingContext : null]) {
+  if (!C) continue;
+  const g = C.prototype.getParameter;
+  C.prototype.getParameter = function (p) {
+    if (p === 37445) return 'Google Inc. (Intel)';
+    if (p === 37446) return 'ANGLE (Intel, Mesa Intel(R) UHD Graphics 620 (KBL GT2), OpenGL 4.6)';
+    return g.call(this, p);
+  };
+}
+"""
+
 SNAPSHOT_JS = """() => {
   const roots = [document];  // the page plus every open shadow root (cookie popups often live in one)
   for (let i = 0; i < roots.length && roots.length < 60; i++)
@@ -80,6 +110,7 @@ class Browser:
         self.last_used = 0.0
         self.persist = False  # whether this browser keeps its cookies on disk (a Settings switch)
         self.ctx = None
+        self.ua = None
         self.hold = False  # a person is signing in: don't close the browser for being idle
         self.cursor = None  # where the last click or typing landed, as fractions of the viewport, for the live view
 
@@ -101,16 +132,25 @@ class Browser:
         await self._close()
         from playwright.async_api import async_playwright
         self.pw = await async_playwright().start()
-        self.browser = await self.pw.chromium.launch(executable_path=CHROME, headless=True, args=[
+        proxy = os.environ.get("SANDBOX_PROXY")  # optional, e.g. a residential proxy for sites that block data-centre addresses
+        self.browser = await self.pw.chromium.launch(executable_path=CHROME, headless=True, proxy=_proxy(proxy), args=[
             "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--mute-audio", "--disable-extensions",
             "--disable-background-networking", "--disable-blink-features=AutomationControlled", "--js-flags=--max-old-space-size=384"])
-        # Headless Chromium announces itself ("HeadlessChrome", navigator.webdriver), which makes many sites
-        # refuse to run their scripts, so present as an ordinary desktop Chrome.
+        # Headless Chromium announces itself ("HeadlessChrome", navigator.webdriver, software WebGL), which makes many sites
+        # refuse to run their scripts, so present as an ordinary desktop Chrome, consistently: the user agent, the
+        # client hints and the page's own view of itself must all agree or bot checks notice.
+        full = self.browser.version  # e.g. 131.0.6778.204
+        major = full.split(".")[0]
+        ua = f"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{major}.0.0.0 Safari/537.36"
         saved = STATE_FILE if self.persist and os.path.exists(STATE_FILE) else None
         ctx = self.ctx = await self.browser.new_context(
-            storage_state=saved, viewport={"width": 1280, "height": 800}, locale="en-GB",
-            user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
-        await ctx.add_init_script("Object.defineProperty(navigator, 'webdriver', { get: () => undefined });")
+            storage_state=saved, viewport={"width": 1280, "height": 800}, locale="en-GB", timezone_id="Europe/London",
+            user_agent=ua, extra_http_headers={"Accept-Language": "en-GB,en;q=0.9"})
+        await ctx.add_init_script(STEALTH_JS)
+        self.ua = {"userAgent": ua, "acceptLanguage": "en-GB,en;q=0.9", "platform": "Linux x86_64", "userAgentMetadata": {
+            "brands": [{"brand": "Chromium", "version": major}, {"brand": "Not_A Brand", "version": "24"}, {"brand": "Google Chrome", "version": major}],
+            "fullVersionList": [{"brand": "Chromium", "version": full}, {"brand": "Not_A Brand", "version": "24.0.0.0"}, {"brand": "Google Chrome", "version": full}],
+            "fullVersion": full, "platform": "Linux", "platformVersion": "6.1.0", "architecture": "x86", "model": "", "mobile": False}}
 
         async def gate(route):
             if route.request.resource_type == "media":  # no autoplaying video: it costs memory and tells Lark nothing
@@ -121,6 +161,10 @@ class Browser:
         await ctx.route("**/*", gate)
         self.page = await ctx.new_page()
         self.page.set_default_timeout(10000)
+        try:
+            await (await ctx.new_cdp_session(self.page)).send("Emulation.setUserAgentOverride", self.ua)  # client hints that match the UA
+        except Exception:
+            pass
 
     async def _save_state(self):
         if self.persist and self.ctx:

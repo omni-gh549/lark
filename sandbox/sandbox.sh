@@ -27,6 +27,7 @@ MEM=$(cfg SANDBOX_MEM 1g)
 SWAP=$(cfg SANDBOX_SWAP "$MEM")   # total memory + swap; equal to MEM means no swap
 CPUS=$(cfg SANDBOX_CPUS 1)
 PIDS=$(cfg SANDBOX_PIDS 256)
+PROXY=$(cfg SANDBOX_PROXY "")   # optional proxy for the browser only
 
 token() {
   local t
@@ -52,7 +53,7 @@ create() {
     --shm-size 256m --memory "$MEM" --memory-swap "$SWAP" --cpus "$CPUS" --pids-limit "$PIDS" \
     --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add SETUID --cap-add SETGID --cap-add KILL \
     --security-opt no-new-privileges \
-    -e SANDBOX_TOKEN="$tok" -v "$VOL":/home/lark "$IMG" >/dev/null
+    -e SANDBOX_TOKEN="$tok" -e SANDBOX_PROXY="$PROXY" -v "$VOL":/home/lark "$IMG" >/dev/null
 }
 
 data_dir() {
