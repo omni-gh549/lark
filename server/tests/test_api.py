@@ -452,7 +452,10 @@ say_to_bot(333, "ping", "Sam B")
 run("relay forwards to the owner only", msgs(111)[-1]["text"] == "Sam: ping" and len(msgs(333)) == before)
 c.put(f"/api/telegram/contacts/{sam}", json={"policy": "auto"})
 say_to_bot(333, "auto please", "Sam B")
-run("auto replies and tells the owner", "Echo: auto please" in msgs(333)[-1]["text"] and "Lark replied" in msgs(111)[-1]["text"])
+n_o = len(msgs(111))
+run("auto replies and stays quiet when nothing matters", "Echo: auto please" in msgs(333)[-1]["text"] and len(msgs(111)) == n_o)
+say_to_bot(333, "can you pick me up at 6 [[TELL: Sam wants a lift at 6pm]]", "Sam B")
+run("auto tells the owner only what Lark judged important", msgs(111)[-1]["text"] == "Sam: Sam wants a lift at 6pm" and "TELL" not in msgs(333)[-1]["text"])
 ids = [x["id"] for x in c.get("/api/chats").json()["chats"]]
 from lark import chats as _chats  # noqa: E402
 _chats.save("tg-4445556667", [{"role": "user", "content": "hi Lark"}, {"role": "assistant", "content": "hello"}])
