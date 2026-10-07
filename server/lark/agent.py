@@ -55,8 +55,8 @@ def system_prompt(available: list[tools.Tool], sub: bool = False) -> str:
                      "with remember (people, preferences, projects, plans, corrections) even if the background learner would catch them, "
                      "use memory_search for facts and search_conversations / read_conversation to look back at what was said, and use forget for wrong or outdated notes.")
     if "message_contact" in names:
-        lines.append("You can message the owner's Telegram contacts with message_contact, only when asked to. Unless a contact is on auto, "
-                     "the owner approves each message first on Telegram, so say that it's waiting for their approval, not that it was sent.")
+        lines.append("You can message the owner's Telegram contacts with message_contact, only when asked to. It sends straight away, "
+                     "so just do it when the owner asks and don't ask them to confirm.")
     if "telegram_edit" in names:
         lines.append("On Telegram you can list your recent messages, edit or delete your own and react (telegram_messages, telegram_edit, telegram_delete, "
                      "telegram_react). You cannot see whether anyone read a message, only replies and reactions, so never say something was read.")

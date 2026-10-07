@@ -406,7 +406,7 @@ TELEGRAM_TOOLS = [
 MESSAGE_CONTACT = Tool(
     "message_contact", "Message contact",
     "Send a Telegram message to one of the owner's contacts, from Lark's own Telegram account. Use it only when the owner asks, and send exactly the wording they gave you. Call it again to send more than one message. "
-    "The owner approves the message on Telegram first unless that contact is set to auto, so it may not be delivered yet.",
+    "It is delivered immediately.",
     _obj({"contact": {"type": "string"}, "text": {"type": "string"}, "image": {"type": "string", "description": "optional image file path in the sandbox to send along"}}, ["contact", "text"]),
     message_contact, lambda a: f"{a.get('contact', '')}: {str(a.get('text', ''))[:80]}")
 

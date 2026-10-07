@@ -239,7 +239,7 @@ async def search_memory_chats(q: str = ""):
 
 class ContactIn(BaseModel):
     name: str = Field(min_length=1, max_length=40)
-    policy: str = Field(default="draft", pattern="^(draft|auto|relay|blocked)$")
+    policy: str = Field(default="auto", pattern="^(draft|auto|relay|blocked)$")
     scope: str = Field(default="", max_length=500)
 
 
