@@ -62,6 +62,7 @@
   let tgCommand = $state("");
   let invite = $state({ name: "", policy: "draft", scope: "" });
   let inviteUrl = $state("");
+  let inviteCommand = $state("");
   const policyLabels = { draft: "Ask me first", auto: "Reply on its own", relay: "Just forward", blocked: "Blocked" };
 
   const tgSay = (text, kind = "") => (tgNote = { text, kind });
@@ -87,7 +88,9 @@
   const unlink = () => tgDo(async () => { await api("/api/telegram/owner", { method: "DELETE" }); tgLink = ""; await loadTelegram(); });
   const makeInvite = () =>
     tgDo(async () => {
-      inviteUrl = (await api("/api/telegram/invites", { method: "POST", body: invite })).url;
+      const r = await api("/api/telegram/invites", { method: "POST", body: invite });
+      inviteUrl = r.url;
+      inviteCommand = r.command;
       invite = { name: "", policy: invite.policy, scope: "" };
     });
   const editContact = (c, body) =>
@@ -388,7 +391,7 @@
               <button class="btn primary" disabled={!invite.name.trim() || !tg.bot}>Create invite link</button>
             </form>
             {#if inviteUrl}
-              <p class="meta" style="margin:0">Send them this link (works once, for a week): <a href={inviteUrl} target="_blank" rel="noopener noreferrer">{inviteUrl}</a></p>
+              <p class="meta" style="margin:0">Send them this link (works once, for a week): <a href={inviteUrl} target="_blank" rel="noopener noreferrer">{inviteUrl}</a>. Or they can open the bot and send <code>{inviteCommand}</code></p>
             {/if}
             <p class="status {tgNote.kind}">{tgNote.text}</p>
           </div>

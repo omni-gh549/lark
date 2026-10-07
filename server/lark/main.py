@@ -203,7 +203,8 @@ async def telegram_unlink():
 @app.post("/api/telegram/invites")
 async def telegram_invite(body: ContactIn):
     try:
-        return {"url": await telegram.invite_url(body.name.strip(), body.policy, body.scope.strip())}
+        url = await telegram.invite_url(body.name.strip(), body.policy, body.scope.strip())
+        return {"url": url, "command": "/start " + url.split("start=")[1]}
     except telegram.TelegramError as e:
         return err(400, str(e))
 
