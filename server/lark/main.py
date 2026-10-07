@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -172,7 +173,8 @@ class ContactEdit(BaseModel):
 
 @app.get("/api/telegram")
 async def telegram_status():
-    out = {"configured": bool(vault.get_key("telegram")), **telegram.view(), "error": telegram.status["error"], "bot": None}
+    out = {"configured": bool(vault.get_key("telegram")), **telegram.view(), "error": telegram.status["error"], "bot": None,
+           "polling": time.time() - telegram.status["polled"] < 60}
     if out["configured"]:
         try:
             out["bot"] = (await telegram.bot_info())["username"]

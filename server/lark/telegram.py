@@ -14,6 +14,7 @@ make Lark act for the owner. Uses long polling, so no webhook or open port is ne
 """
 import asyncio
 import json
+import logging
 import os
 import secrets
 import tempfile
@@ -23,6 +24,7 @@ import httpx
 
 from . import agent, chats, files, runs, vault
 
+log = logging.getLogger("lark.telegram")
 API = os.environ.get("LARK_TELEGRAM_API", "https://api.telegram.org")
 OWNER_CHAT = "telegram-owner"
 POLICIES = ("draft", "auto", "relay", "blocked")
@@ -214,10 +216,10 @@ async def handle(update: dict):
             m = update["message"]
             if m.get("chat", {}).get("type") == "private" and m.get("from"):
                 await _on_message(m)
-    except TelegramError:
-        pass
+    except TelegramError as e:
+        log.warning("telegram: could not answer an update: %s", e)
     except Exception:
-        pass  # one bad message must never stop the bot
+        log.exception("telegram: failed handling an update")  # one bad message must never stop the bot
 
 
 async def _on_message(m: dict):
@@ -452,8 +454,9 @@ async def message_contact(name: str, text: str) -> str:
 
 # ---- the polling loop ----------------------------------------------------------------------------------------
 
-status = {"error": None}
+status = {"error": None, "polled": 0.0}
 _wake = asyncio.Event()
+_hooked: dict = {}
 
 
 def poke():
@@ -472,10 +475,15 @@ async def poll():
             _wake.clear()
             continue
         try:
+            if _hooked.get("token") != token:
+                await api("deleteWebhook", token)  # a webhook set elsewhere would block getUpdates
+                _hooked["token"] = token
+                log.warning("telegram: polling started")
             st = load()
             updates = await api("getUpdates", token, offset=st["offset"], timeout=25, _timeout=40,
                                 allowed_updates=["message", "callback_query"])
             status["error"] = None
+            status["polled"] = time.time()
             for u in updates:
                 st = load()
                 st["offset"] = u["update_id"] + 1
@@ -484,7 +492,10 @@ async def poll():
         except asyncio.CancelledError:
             raise
         except TelegramError as e:
+            if status["error"] != str(e):
+                log.warning("telegram: polling problem: %s", e)
             status["error"] = str(e)
             await asyncio.sleep(10)
         except Exception:
+            log.exception("telegram: polling crashed, retrying")
             await asyncio.sleep(5)

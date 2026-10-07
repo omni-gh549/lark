@@ -350,7 +350,7 @@
               <span class="row-title">{tg.owner ? `Linked to ${tg.owner.name}` : "Your account"}</span>
               <span class="meta">{tg.bot ? `@${tg.bot}` : ""}</span>
             </div>
-            {#if tg.error}<p class="status bad">{tg.error}</p>{/if}
+            {#if tg.error}<p class="status bad">{tg.error}</p>{:else if !tg.polling}<p class="status bad">Not receiving messages yet. Check that the token is right and the server can reach Telegram, then reload this page.</p>{/if}
             <p class="meta" style="margin:0">
               {tg.owner ? "Chat with Lark in Telegram like here. /new starts over, /stop cancels." : "Link your Telegram so you can chat with Lark there and approve its messages to other people."}
             </p>
