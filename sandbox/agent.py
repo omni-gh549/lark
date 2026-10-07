@@ -50,11 +50,11 @@ SNAPSHOT_JS = """() => {
     const n = els.length + 1;
     e.setAttribute('data-lark', n);
     const tag = e.tagName.toLowerCase();
-    const label = (e.getAttribute('aria-label') || e.innerText || e.placeholder || e.title || e.name || e.value || '')
+    const label = (e.getAttribute('aria-label') || e.innerText || e.placeholder || e.title || e.name || (['submit', 'button', 'reset'].includes(e.type) ? e.value : '') || '')
       .trim().replace(/\\s+/g, ' ').slice(0, 80);
     els.push({ n, covered: !!covered, cover: covered ? (hit.getAttribute('aria-label') || hit.id || hit.className || hit.tagName).toString().slice(0, 40) : '', kind: tag === 'a' ? 'link' : tag === 'input' ? (e.type || 'text') : tag, label,
       href: tag === 'a' ? e.getAttribute('href') : null,
-      value: ['input', 'textarea', 'select'].includes(tag) && e.type !== 'password' ? String(e.value || '').slice(0, 40) : null });
+      value: ['input', 'textarea', 'select'].includes(tag) && !/password|hidden/.test(e.type || '') && !/one-time-code|username|current-password|new-password|cc-/.test(e.autocomplete || '') && !/otp|2fa|passcode|\\bpin\\b|token|secret|verif|code/i.test((e.name || '') + ' ' + (e.id || '')) ? String(e.value || '').slice(0, 40) : null });
     if (els.length >= 80) break;
   }
   return { url: location.href, title: document.title, text: (document.body ? document.body.innerText : '').slice(0, 5000), els,

@@ -178,11 +178,12 @@ run("request_login is offered with the browser", True)
 import http.server  # noqa: E402
 import functools  # noqa: E402
 site = Path(tempfile.mkdtemp())
-(site / "index.html").write_text('<title>Shop</title><a href="/two.html">Next page</a><input placeholder="Find"><button onclick="document.title=\'clicked\'">Go</button>')
+(site / "index.html").write_text('<title>Shop</title><a href="/two.html">Next page</a><input placeholder="Find"><button onclick="document.title=\'clicked\'">Go</button><input name="otp" value="123456"><input autocomplete="username" value="oscar@example.com"><input name="city" value="Leeds">')
 (site / "two.html").write_text("<title>Two</title><p>second page body</p>")
 httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 8898), functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(site)))
 threading.Thread(target=httpd.serve_forever, daemon=True).start()
 snap = asyncio.run(_tools.browser({"action": "goto", "url": "http://127.0.0.1:8898/index.html"}))
+run("snapshot hides codes and usernames but shows ordinary fields", "123456" not in snap and "oscar@example.com" not in snap and "Leeds" in snap)
 run("browser snapshot lists elements", "Title: Shop" in snap and "[1] link 'Next page'" in snap and "[2] text 'Find'" in snap)
 snap = asyncio.run(_tools.browser({"action": "click", "id": 1}))
 run("browser click follows a link", "Title: Two" in snap and "second page body" in snap)
