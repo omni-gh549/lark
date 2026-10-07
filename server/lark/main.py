@@ -186,7 +186,8 @@ async def telegram_status():
 @app.post("/api/telegram/link")
 async def telegram_link():
     try:
-        return {"url": await telegram.link_url()}
+        url = await telegram.link_url()
+        return {"url": url, "command": "/start " + url.split("start=")[1]}
     except telegram.TelegramError as e:
         return err(400, str(e))
 

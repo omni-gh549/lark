@@ -59,6 +59,7 @@
   let tg = $state(null); // { configured, bot, owner, contacts, error }
   let tgNote = $state({ text: "", kind: "" });
   let tgLink = $state("");
+  let tgCommand = $state("");
   let invite = $state({ name: "", policy: "draft", scope: "" });
   let inviteUrl = $state("");
   const policyLabels = { draft: "Ask me first", auto: "Reply on its own", relay: "Just forward", blocked: "Blocked" };
@@ -82,7 +83,7 @@
     }
   }
 
-  const makeLink = () => tgDo(async () => (tgLink = (await api("/api/telegram/link", { method: "POST" })).url));
+  const makeLink = () => tgDo(async () => { const r = await api("/api/telegram/link", { method: "POST" }); tgLink = r.url; tgCommand = r.command; });
   const unlink = () => tgDo(async () => { await api("/api/telegram/owner", { method: "DELETE" }); tgLink = ""; await loadTelegram(); });
   const makeInvite = () =>
     tgDo(async () => {
@@ -359,7 +360,7 @@
               {#if tg.owner}<button class="btn" onclick={unlink}>Unlink</button>{/if}
             </div>
             {#if tgLink}
-              <p class="meta" style="margin:0">Open this in Telegram within 15 minutes and press Start: <a href={tgLink} target="_blank" rel="noopener noreferrer">{tgLink}</a></p>
+              <p class="meta" style="margin:0">Open this in Telegram within 15 minutes and press Start: <a href={tgLink} target="_blank" rel="noopener noreferrer">{tgLink}</a>. No Telegram app on this device? Open the bot in Telegram on your phone or at web.telegram.org and send it <code>{tgCommand}</code></p>
             {/if}
           </div>
           <div class="row">
