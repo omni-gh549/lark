@@ -72,6 +72,17 @@ async def chat(request: Request):
             yield "data: " + json.dumps({"choices": [{"delta": {"content": out}}]}) + "\n\n"
             yield "data: [DONE]\n\n"
             return
+        if "decide whether" in system and "needs to hear about it" in system:  # contact triage
+            payload = json.loads(last)
+            said = payload["their_message"].lower()
+            if "garbage" in said:
+                out = "no idea"
+            else:
+                important = "lift" in said or any(n.lower().find("router") >= 0 and "router" in said for n in payload["owner_notes"])
+                out = json.dumps({"notify": important, "summary": "Wants a lift or mentioned the router.", "needs_decision": False})
+            yield "data: " + json.dumps({"choices": [{"delta": {"content": out}}]}) + "\n\n"
+            yield "data: [DONE]\n\n"
+            return
         if last.endswith("sysdump"):
             yield "data: " + json.dumps({"choices": [{"delta": {"content": system}}]}) + "\n\n"
             yield "data: [DONE]\n\n"

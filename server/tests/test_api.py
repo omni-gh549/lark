@@ -454,8 +454,17 @@ c.put(f"/api/telegram/contacts/{sam}", json={"policy": "auto"})
 say_to_bot(333, "auto please", "Sam B")
 n_o = len(msgs(111))
 run("auto replies and stays quiet when nothing matters", "Echo: auto please" in msgs(333)[-1]["text"] and len(msgs(111)) == n_o)
-say_to_bot(333, "can you pick me up at 6 [[TELL: Sam wants a lift at 6pm]]", "Sam B")
-run("auto tells the owner only what Lark judged important", msgs(111)[-1]["text"] == "Sam: Sam wants a lift at 6pm" and "TELL" not in msgs(333)[-1]["text"])
+say_to_bot(333, "can you give me a lift at 6", "Sam B")
+run("auto tells the owner only what Lark judged important", msgs(111)[-1]["text"] == "Sam: Wants a lift or mentioned the router.")
+n_o = len(msgs(111))
+say_to_bot(333, "garbage in", "Sam B")
+run("when the judgement fails the owner is told rather than missed", len(msgs(111)) == n_o + 1 and "garbage in" in msgs(111)[-1]["text"])
+from lark import memory as _mem  # noqa: E402
+_mem.add_fact("Always tell Oscar if Sam mentions the router.", "preference", "Sam", 5, pinned=True)
+n_o = len(msgs(111))
+say_to_bot(333, "my router is down", "Sam B")
+run("the owner's own rules decide what is worth telling them", len(msgs(111)) == n_o + 1)
+_mem.clear_facts()
 ids = [x["id"] for x in c.get("/api/chats").json()["chats"]]
 from lark import chats as _chats  # noqa: E402
 _chats.save("tg-4445556667", [{"role": "user", "content": "hi Lark"}, {"role": "assistant", "content": "hello"}])
@@ -564,7 +573,7 @@ def spy(*a, **k):
 _agent.loop = spy
 say_to_bot(333, "tools", "Sam B")
 _agent.loop = _loop
-run("contacts' model has no tools", seen == [[]])
+run("contacts' model gets at most web search", len(seen) == 1 and {t.name for t in seen[0]} <= {"web_search"})
 
 r = c.delete(f"/api/telegram/contacts/{sam}")
 run("remove contact", r.json()["contacts"] == [])
