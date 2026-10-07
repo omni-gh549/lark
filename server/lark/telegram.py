@@ -378,11 +378,13 @@ async def _from_contact(st: dict, cid: str, contact: dict, text: str):
         return
     if not reply:
         return
-    if policy == "auto" or not owner:
+    if policy == "auto":
         await _deliver(cid, reply)
         if notify:
             await say(notify, f"{contact['name']}: {text}\n\nLark replied: {reply}")
         return
+    if not owner:
+        return  # nobody to approve a draft, so nothing is sent
     await _draft(cid, reply, f"{contact['name']} wrote: {text}")
 
 
