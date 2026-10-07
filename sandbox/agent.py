@@ -8,6 +8,7 @@ import base64
 import hmac
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -127,7 +128,7 @@ class Browser:
             return False
 
     async def _ensure(self):
-        if self.page and self.browser.is_connected():
+        if self.page and not self.page.is_closed() and self.browser.is_connected():
             return
         await self._close()
         from playwright.async_api import async_playwright
@@ -239,6 +240,10 @@ class Browser:
             if not url.startswith(("http://", "https://")):
                 raise ValueError("Only http and https pages can be opened.")
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            try:  # let scripts and images settle a moment so the snapshot isn't of a half-built page
+                await page.wait_for_load_state("load", timeout=4000)
+            except Exception:
+                pass
         elif action == "click" and (a.get("text") or a.get("x") is not None) and a.get("id") is None:
             await self._click_visible(a)
         elif action in ("click", "type"):
@@ -279,6 +284,11 @@ class Browser:
             out["image"] = base64.b64encode(await page.screenshot(type="jpeg", quality=70, timeout=8000)).decode()
         elif action != "snapshot":
             raise ValueError("Unknown browser action.")
+        if action in ("click", "type", "press"):
+            try:  # a click that navigates: wait for the new page to be usable before describing it
+                await page.wait_for_load_state("domcontentloaded", timeout=2500)
+            except Exception:
+                pass
         out["snapshot"] = await self._snapshot()
         return out
 
@@ -331,7 +341,14 @@ class Browser:
                     self.persist = persist
                     if not persist and os.path.exists(STATE_FILE):
                         os.unlink(STATE_FILE)  # turning it off forgets what was saved
-                out = await self._act(a)
+                try:
+                    out = await self._act(a)
+                except Exception as e:
+                    if a.get("action") in ("goto", "snapshot", "screenshot", "scroll", "back") and re.search(r"closed|crash|disconnected", str(e), re.I):
+                        await self._close()  # the page died: start a fresh browser and try once more
+                        out = await self._act(a)
+                    else:
+                        raise
                 await self._save_state()
                 return out
             except Exception as e:  # playwright errors are long; keep the first line

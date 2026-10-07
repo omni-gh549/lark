@@ -19,6 +19,27 @@
   const SPECIAL = { Enter: "Enter", Backspace: "Backspace", Tab: "Tab", Escape: "Escape", Delete: "Delete", Home: "Home", End: "End",
     ArrowUp: "ArrowUp", ArrowDown: "ArrowDown", ArrowLeft: "ArrowLeft", ArrowRight: "ArrowRight", PageUp: "PageUp", PageDown: "PageDown" };
 
+  let full = $state(false);
+  function toggleFull() {
+    full = !full;
+  }
+  const key = (k) => {
+    send({ type: "key", key: k });
+    sink?.focus();
+  };
+  async function paste() {
+    try {
+      const t = await navigator.clipboard.readText();
+      if (t) send({ type: "text", text: t });
+    } catch {
+      sink?.focus(); // the browser wouldn't hand over the clipboard: paste with the keyboard instead
+    }
+    sink?.focus();
+  }
+  function onwindowkey(e) {
+    if (e.key === "Escape" && full && !control) full = false;
+  }
+
   function at(e) {
     const r = view.getBoundingClientRect();
     return { x: Math.min(Math.max((e.clientX - r.left) / r.width, 0), 1), y: Math.min(Math.max((e.clientY - r.top) / r.height, 0), 1) };
@@ -97,15 +118,22 @@
   });
 </script>
 
-<div class="window" role="group" aria-label="Live view of the browser">
+<svelte:window onkeydown={onwindowkey} />
+<div class="window" class:full role="group" aria-label="Live view of the browser">
   <div class="window-bar">
     <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
     <span class="window-url">{url || "Browser"}</span>
     {#if control}
+      <button class="btn mini" onclick={() => sink?.focus()}>Keyboard</button>
+      <button class="btn mini" onclick={paste}>Paste</button>
+      <button class="btn mini" onclick={() => key("Enter")}>Enter</button>
+      <button class="btn mini" onclick={() => key("Tab")}>Tab</button>
+      <button class="btn mini" onclick={() => key("Escape")}>Esc</button>
       <button class="btn primary mini" onclick={done}>{asked ? "I'm signed in" : "Done"}</button>
     {:else}
       <button class="btn mini" onclick={take}>Take over</button>
     {/if}
+    <button class="btn mini" onclick={toggleFull} aria-label={full ? "Exit full screen" : "Full screen"}>{full ? "Close" : "Full screen"}</button>
   </div>
   {#if control}
     <p class="ask">Lark is paused while you're in control. Press {asked ? "I'm signed in" : "Done"} to let it continue.</p>
@@ -113,7 +141,8 @@
   {#if asked}
     <p class="ask">Lark needs you to sign in{asked.site ? ` to ${asked.site}` : ""}.{asked.reason ? ` ${asked.reason}` : ""}{control ? " Click and type in the window below, then press I'm signed in." : ""}</p>
   {/if}
-  <div class="window-view" bind:this={view}>
+  <div class="window-view">
+   <div class="stage" bind:this={view}>
     <img {src} alt="" />
     {#if cursor}
       <div class="pointer" style="left: {cursor.x * 100}%; top: {cursor.y * 100}%">
@@ -127,5 +156,6 @@
       <div class="takeover" {onclick} {onwheel}></div>
       <textarea bind:this={sink} class="sink" rows="1" aria-label="Type into the browser" autocomplete="off" autocapitalize="off" spellcheck="false" {onkeydown} {oninput}></textarea>
     {/if}
+   </div>
   </div>
 </div>

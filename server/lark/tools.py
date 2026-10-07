@@ -112,7 +112,14 @@ async def browser(args: dict):
     if action not in ("goto", "click", "type", "press", "scroll", "back", "snapshot", "screenshot"):
         raise ToolError("Unknown action.")
     try:
-        r = await sandbox.browse(args)
+        try:
+            r = await sandbox.browse(args)
+        except sandbox.SandboxError as e:
+            # The sandbox restarting or the page crashing is worth one more try after a moment; other errors are real.
+            if not re.search(r"isn't reachable|closed|crash|disconnected|Timeout.*navigat", str(e), re.I) or action in ("click", "type", "press"):
+                raise
+            await asyncio.sleep(2.5)
+            r = await sandbox.browse(args)
     except sandbox.SandboxError as e:
         raise ToolError(str(e))
     text = clip(r["snapshot"], 9000)

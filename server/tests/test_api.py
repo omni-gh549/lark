@@ -453,6 +453,12 @@ run("relay forwards to the owner only", msgs(111)[-1]["text"] == "Sam: ping" and
 c.put(f"/api/telegram/contacts/{sam}", json={"policy": "auto"})
 say_to_bot(333, "auto please", "Sam B")
 run("auto replies and tells the owner", "Echo: auto please" in msgs(333)[-1]["text"] and "Lark replied" in msgs(111)[-1]["text"])
+ids = [x["id"] for x in c.get("/api/chats").json()["chats"]]
+from lark import chats as _chats  # noqa: E402
+_chats.save("tg-4445556667", [{"role": "user", "content": "hi Lark"}, {"role": "assistant", "content": "hello"}])
+ids = [x["id"] for x in c.get("/api/chats").json()["chats"]]
+run("contact chats stay out of the web history", "tg-4445556667" not in ids and (_chats.load("tg-4445556667") is not None))
+_chats.delete("tg-4445556667")
 c.put(f"/api/telegram/contacts/{sam}", json={"policy": "blocked"})
 before_o, before_c = len(msgs(111)), len(msgs(333))
 say_to_bot(333, "hello?", "Sam B")

@@ -371,7 +371,8 @@ class SavedChat(BaseModel):
 @app.get("/api/chats")
 async def list_chats():
     live = runs.running_ids()
-    return {"chats": [{**c, "running": c["id"] in live} for c in chats.listing()]}
+    # Chats with Telegram contacts are kept apart from the owner's own history (Lark can still search them when asked).
+    return {"chats": [{**c, "running": c["id"] in live} for c in chats.listing() if not memory.is_contact_chat(c["id"])]}
 
 
 @app.get("/api/chats/{chat_id}")
@@ -526,11 +527,16 @@ async def browser_stream(request: Request):
 
     async def frames():
         end = asyncio.get_event_loop().time() + STREAM_SECONDS
+        last = None
         yield f"--{boundary}\r\n".encode()
         while asyncio.get_event_loop().time() < end:
             if await request.is_disconnected():
                 return
             data = await sandbox.frame()
+            if data:
+                last = data
+            elif last:
+                data = last  # an empty frame now and then shouldn't flicker the window
             if data:
                 # Browsers paint a part once the next one starts arriving, so unchanged frames are resent
                 # (a few KB each) rather than leaving the last one stuck behind a quiet connection.
