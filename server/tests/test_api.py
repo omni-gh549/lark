@@ -18,6 +18,7 @@ DATA = tempfile.mkdtemp()
 os.environ["LARK_DATA"] = DATA
 os.environ.pop("LARK_PASSWORD", None)
 os.environ.pop("LARK_SECRET_KEY", None)
+os.environ["LARK_NO_SUGGESTED"] = "1"  # tests start with no suggested memory models
 
 import mock_upstream  # noqa: E402
 from lark import providers, search, vault  # noqa: E402

@@ -17,6 +17,7 @@ DEFAULTS = {
     "browser_cookies": False,  # keep the sandbox browser's cookies and logins between sessions
     "memory_use": True,  # remember across chats: the notes in the prompt and the memory tools
     "memory_learn": True,  # learn from conversations automatically, after each reply
+    "memory_model": "",  # optional cheaper model for the learning pass (empty = the chat model)
     "embedding_model": "",  # optional: match memories by meaning (needs an embeddings model on the chosen provider)
     "keys": {},
 }
@@ -42,10 +43,15 @@ def _fernet() -> Fernet:
     return Fernet(MASTER.read_bytes().strip())
 
 
+# Suggested cheap models, used until you pick your own (OpenRouter only; empty elsewhere).
+SUGGESTED = {"openrouter": {"memory_model": "qwen/qwen3.7-flash", "embedding_model": "qwen/qwen3-embedding-8b"}}
+
+
 def load() -> dict:
-    if not SETTINGS.exists():
-        return json.loads(json.dumps(DEFAULTS))
-    data = json.loads(SETTINGS.read_text())
+    data = json.loads(SETTINGS.read_text()) if SETTINGS.exists() else {}
+    for k, v in SUGGESTED.get(data.get("provider", DEFAULTS["provider"]), {}).items():
+        if not os.environ.get("LARK_NO_SUGGESTED") and k not in data:
+            data[k] = v
     return {
         "provider": data.get("provider", DEFAULTS["provider"]),
         "models": {**DEFAULTS["models"], **data.get("models", {})},
@@ -53,7 +59,8 @@ def load() -> dict:
         "browser_cookies": bool(data.get("browser_cookies", False)),
         "memory_use": bool(data.get("memory_use", True)),
         "memory_learn": bool(data.get("memory_learn", True)),
-        "embedding_model": str(data.get("embedding_model", "")),
+        "memory_model": str(data.get("memory_model", DEFAULTS["memory_model"])),
+        "embedding_model": str(data.get("embedding_model", DEFAULTS["embedding_model"])),
         "keys": data.get("keys", {}),
     }
 
@@ -67,7 +74,7 @@ def _save(data: dict):
     os.replace(tmp, SETTINGS)
 
 
-def update(provider=None, models=None, search=None, browser_cookies=None, memory_use=None, memory_learn=None, embedding_model=None):
+def update(provider=None, models=None, search=None, browser_cookies=None, memory_use=None, memory_learn=None, embedding_model=None, memory_model=None):
     data = load()
     if browser_cookies is not None:
         data["browser_cookies"] = bool(browser_cookies)
@@ -75,6 +82,8 @@ def update(provider=None, models=None, search=None, browser_cookies=None, memory
         data["memory_use"] = bool(memory_use)
     if memory_learn is not None:
         data["memory_learn"] = bool(memory_learn)
+    if memory_model is not None:
+        data["memory_model"] = memory_model.strip()[:200]
     if embedding_model is not None:
         data["embedding_model"] = embedding_model.strip()[:200]
     if provider:

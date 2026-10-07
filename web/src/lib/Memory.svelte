@@ -136,13 +136,23 @@
         </p>
       </div>
       <div class="row">
+        <label class="row-title" for="mmodel">Memory model (optional)</label>
+        <div class="field">
+          <input id="mmodel" value={m?.memory_model ?? ""} placeholder="A cheaper model for note-taking, e.g. qwen/qwen3.7-flash" autocomplete="off" spellcheck="false"
+            onchange={(e) => setting({ memory_model: e.currentTarget.value })} />
+        </div>
+        <p class="meta" style="margin:0">
+          Used only for the note-taking pass after each reply. Defaults to a cheap one on OpenRouter; clear it to use your chat model.
+        </p>
+      </div>
+      <div class="row">
         <label class="row-title" for="embed">Match by meaning (optional)</label>
         <div class="field">
-          <input id="embed" value={m?.embedding_model ?? ""} placeholder="Embedding model name, e.g. openai/text-embedding-3-small" autocomplete="off" spellcheck="false"
+          <input id="embed" value={m?.embedding_model ?? ""} placeholder="e.g. qwen/qwen3-embedding-8b" autocomplete="off" spellcheck="false"
             onchange={(e) => setting({ embedding_model: e.currentTarget.value })} />
         </div>
         <p class="meta" style="margin:0">
-          Needs an embeddings model on your chosen provider. Without one, notes are found by words, which still works well.
+          Needs an embeddings model on your chosen provider. Clear it and notes are found by words only, which still works well.
         </p>
       </div>
     </div>

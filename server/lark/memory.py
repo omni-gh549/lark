@@ -591,6 +591,7 @@ async def learn(chat_id: str, name: str, key: str, model: str) -> None:
             "related_memories": [{"id": f["id"], "text": f["text"], "kind": f["kind"], "subject": f["subject"]} for f in related + pinned],
             "latest_exchange": {"user": user_text[:4000], "assistant": reply[:3000]},
         }
+        model = vault.load()["memory_model"].strip() or model
         system = LEARN_SYSTEM.format(today=datetime.now(timezone.utc).strftime("%A %d %B %Y"))
         out = ""
         async with _learn_lock:
