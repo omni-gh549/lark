@@ -325,8 +325,8 @@ async def _from_owner(chat_id: int, text: str, photo):
         for name in part.get("images", []) if part.get("type") == "tool" else []:
             try:
                 await send_photo(chat_id, name, part.get("caption", ""))
-            except TelegramError:
-                pass
+            except TelegramError as e:
+                log.warning("couldn't send image %s to the owner: %s", name, e)
 
 
 def _rate_ok(cid: str) -> bool:
