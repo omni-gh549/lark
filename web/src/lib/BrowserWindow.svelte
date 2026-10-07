@@ -44,13 +44,23 @@
     e.currentTarget.value = "";
     if (t) send({ type: "text", text: t });
   }
+  let beat;
+  const tell = (on) => api("/api/browser/takeover", { method: "POST", body: { on } }).catch(() => {});
   async function take() {
     control = true;
+    tell(true); // Lark waits until you press Done
+    clearInterval(beat);
+    beat = setInterval(() => tell(true), 15000);
     await Promise.resolve();
     sink?.focus();
   }
+  function release() {
+    clearInterval(beat);
+    tell(false);
+  }
   async function done() {
     control = false;
+    release();
     try {
       await api("/api/browser/login/done", { method: "POST" });
     } catch {}
@@ -65,7 +75,7 @@
         try {
           if (n++ % 4 === 0) {
             const p = (await (await fetch("/api/browser/login")).json()).pending;
-            if (p && !asked) control = true; // Lark asked: hand over straight away
+            if (p && !asked) take(); // Lark asked: hand over straight away
             asked = p;
           }
           const r = await fetch("/api/browser/cursor");
@@ -80,7 +90,10 @@
       }
     }
     poll();
-    return () => (stop = true);
+    return () => {
+      stop = true;
+      if (control) release();
+    };
   });
 </script>
 
@@ -94,6 +107,9 @@
       <button class="btn mini" onclick={take}>Take over</button>
     {/if}
   </div>
+  {#if control}
+    <p class="ask">Lark is paused while you're in control. Press {asked ? "I'm signed in" : "Done"} to let it continue.</p>
+  {/if}
   {#if asked}
     <p class="ask">Lark needs you to sign in{asked.site ? ` to ${asked.site}` : ""}.{asked.reason ? ` ${asked.reason}` : ""}{control ? " Click and type in the window below, then press I'm signed in." : ""}</p>
   {/if}

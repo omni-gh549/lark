@@ -98,6 +98,7 @@ async def loop(name, key, model, history, available, max_rounds, sub=False, syst
 
     rounds = 0
     while max_rounds is None or rounds < max_rounds:
+        await tools.wait_unpaused()
         rounds += 1
         calls = None
         async for ev in providers.stream_round(name, key, model, messages, specs):
@@ -132,6 +133,7 @@ async def loop(name, key, model, history, available, max_rounds, sub=False, syst
                 return False, f"Unknown tool '{c['name']}'.", extra
             async with gate:
                 try:
+                    await tools.wait_unpaused()
                     if tool is SUBAGENT:
                         task = args.get("task")
                         if not isinstance(task, str) or not task.strip():

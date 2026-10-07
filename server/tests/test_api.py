@@ -165,14 +165,19 @@ pending, state, again, out = asyncio.run(_login_flow())
 run("sign-in request shows the site and reason", state == {"site": "example.com", "reason": "to see your orders"} == pending)
 run("only one sign-in request at a time", again and "already" in again)
 run("pressing Done resumes Lark and clears the request", c.get("/api/browser/login").json()["pending"] is None and ("signing in" in out or "ToolError" in out))
-_tools.LOGIN["last_input"] = __import__("time").time()
-try:
-    asyncio.run(_tools.browser({"action": "snapshot"}))
-    blocked = False
-except _tools.ToolError as e:
-    blocked = "controlling the browser" in str(e)
-_tools.LOGIN["last_input"] = 0.0
-run("Lark's browser waits while you're typing", blocked)
+import concurrent.futures  # noqa: E402
+import time as _tm  # noqa: E402
+c.post("/api/browser/takeover", json={"on": True})
+with concurrent.futures.ThreadPoolExecutor(1) as _ex:
+    fut = _ex.submit(c.portal.call, _tools.wait_unpaused)
+    _tm.sleep(1.0)
+    waited = not fut.done()
+    c.post("/api/browser/takeover", json={"on": False})
+    fut.result(timeout=5)
+run("Lark's run waits while you take over, and resumes when you press Done", waited and _tools.TAKEOVER["until"] == 0.0)
+_tools.hold_run(True)
+_tools.TAKEOVER["until"] = _tm.time() - 1
+run("the pause lapses by itself if the page goes away", asyncio.run(asyncio.wait_for(_tools.wait_unpaused(), 2)) is None)
 run("request_login is offered with the browser", True)
 # browser tool against a local page
 import http.server  # noqa: E402

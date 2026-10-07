@@ -111,8 +111,6 @@ async def browser(args: dict):
     action = _str(args, "action")
     if action not in ("goto", "click", "type", "press", "scroll", "back", "snapshot", "screenshot"):
         raise ToolError("Unknown action.")
-    if time.time() - LOGIN.get("last_input", 0) < 8:
-        raise ToolError("The user is controlling the browser right now. Wait a moment, then try again.")
     try:
         r = await sandbox.browse(args)
     except sandbox.SandboxError as e:
@@ -196,7 +194,19 @@ BROWSER = Tool(
 
 
 # A person signing in on the live browser view. What they type goes straight to the page: never to the model.
-LOGIN: dict = {"pending": None, "event": None, "took_over": False, "last_input": 0.0}
+LOGIN: dict = {"pending": None, "event": None, "took_over": False}
+TAKEOVER = {"until": 0.0}  # while you drive the browser, Lark's run waits. Kept alive by the page; lapses if it goes away.
+TAKEOVER_TTL = 45
+
+
+def hold_run(on: bool):
+    TAKEOVER["until"] = time.time() + TAKEOVER_TTL if on else 0.0
+
+
+async def wait_unpaused():
+    """Block while a person is driving the live browser."""
+    while time.time() < TAKEOVER["until"]:
+        await asyncio.sleep(0.4)
 LOGIN_WAIT = 20 * 60  # how long Lark waits for someone to sign in
 
 

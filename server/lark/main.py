@@ -561,11 +561,24 @@ async def browser_input(body: BrowserInput):
     """Mouse and keyboard from the person taking over the live view. Never logged and never shown to the model."""
     if not sandbox.configured():
         return err(404, "No sandbox.")
-    tools.LOGIN["last_input"] = time.time()
+    if time.time() < tools.TAKEOVER["until"]:
+        tools.hold_run(True)  # still driving: keep Lark waiting
     try:
         await sandbox.browser_input(body.model_dump(exclude_none=True))
     except sandbox.SandboxError as e:
         return err(502, str(e))
+    return {"ok": True}
+
+
+class TakeoverIn(BaseModel):
+    on: bool
+
+
+@app.post("/api/browser/takeover")
+async def browser_takeover(body: TakeoverIn):
+    """You started or stopped driving the browser. While you do, Lark's run waits; the page re-sends this every few seconds."""
+    tools.hold_run(body.on)
+    await sandbox.browser_hold(body.on or bool(tools.LOGIN["pending"]))
     return {"ok": True}
 
 
