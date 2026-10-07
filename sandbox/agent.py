@@ -98,6 +98,33 @@ FRAME_BUTTONS_JS = """() => Array.from(document.querySelectorAll('button,a[href]
   .filter(Boolean).slice(0, 12)"""
 
 
+_display_lock = threading.Lock()
+
+
+def _headed_display() -> bool:
+    """Tesco's sign-in rejects a headless browser. A virtual screen lets Chromium run as a normal window.
+
+    Playwright's driver only notices DISPLAY from the environment it inherits, so this must run
+    before that driver starts.
+    """
+    if os.environ.get("DISPLAY"):
+        return True
+    if not shutil.which("Xvfb"):
+        return False
+    with _display_lock:
+        if os.environ.get("DISPLAY"):
+            return True
+        subprocess.Popen(
+            ["Xvfb", ":99", "-screen", "0", "1280x800x24", "-nolisten", "tcp", "-ac"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        for _ in range(50):
+            if os.path.exists("/tmp/.X11-unix/X99"):
+                os.environ["DISPLAY"] = ":99"
+                return True
+            time.sleep(0.1)
+    return False
+
+
 class Browser:
     """One headless Chromium page, driven by element numbers. It lives on its own asyncio loop so a screenshot
     for the live view can be taken while an action (a slow page load, say) is still running."""
@@ -113,11 +140,23 @@ class Browser:
         self.ua = None
         self.hold = False  # a person is signing in: don't close the browser for being idle
         self.cursor = None  # where the last click or typing landed, as fractions of the viewport, for the live view
+        self.remote = False  # the page is a browser on the home machine, left running between visits
+        self._screen = None  # (width, height) when the live view is the whole home screen
+        self._chrome = None  # where the page sits on that screen, so Lark's cursor still lines up
+        self._chrome_at = 0.0
+        self._adopt_failed_at = 0.0
+        self._save_at = 0.0
 
     async def _make_lock(self):
         return asyncio.Lock()
 
     def available(self) -> bool:
+        if os.environ.get("SANDBOX_BROWSER_CDP"):
+            try:
+                import patchright  # noqa: F401
+                return True
+            except ImportError:
+                pass
         if not os.path.exists(CHROME):
             return False
         try:
@@ -126,16 +165,186 @@ class Browser:
         except ImportError:
             return False
 
+    def _cdp_ws(self, base: str) -> str:
+        """Chrome advertises its own loopback address. Connect to the address that actually answered."""
+        from urllib.request import urlopen
+        from urllib.parse import urlparse, urlunparse
+        with urlopen(base.rstrip("/") + "/json/version", timeout=4) as response:
+            advertised = urlparse(json.loads(response.read().decode())["webSocketDebuggerUrl"])
+        return urlunparse(advertised._replace(netloc=urlparse(base).netloc))
+
+    def _os_send(self, payload: dict):
+        """Clicks and typing go through the home machine's own mouse and keyboard.
+        The debugger can watch the page, but sign-in checks reject clicks it creates."""
+        import urllib.request
+        url = os.environ.get("SANDBOX_BROWSER_INPUT", "").strip()
+        if not url:
+            raise RuntimeError("The home browser has no keyboard.")
+        request = urllib.request.Request(
+            url.rstrip("/") + "/input", data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(request, timeout=10) as response:
+            response.read()
+
+    async def _screen_point(self, x: float, y: float):
+        origin = await self.page.evaluate("""() => ({
+            x: window.screenX + Math.max(0, (window.outerWidth - window.innerWidth) / 2),
+            y: window.screenY + Math.max(0, window.outerHeight - window.innerHeight),
+            dpr: window.devicePixelRatio || 1
+        })""")
+        return origin["x"] + x * origin["dpr"], origin["y"] + y * origin["dpr"]
+
+    async def _os_click(self, x: float, y: float):
+        sx, sy = await self._screen_point(x, y)
+        await asyncio.to_thread(self._os_send, {"op": "click", "x": sx, "y": sy})
+
+    async def _os_click_box(self, target):
+        box = await target.bounding_box()
+        if not box:
+            raise ValueError("That element has no position on screen.")
+        await self._os_click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+
+    async def _os_type(self, text: str, clear: bool = True):
+        await asyncio.to_thread(self._os_send, {"op": "type", "text": text, "clear": clear})
+
+    def _key_name(self, name: str) -> str:
+        return {"Enter": "Return", "Backspace": "BackSpace", "Escape": "Escape", "Tab": "Tab",
+                "ArrowLeft": "Left", "ArrowRight": "Right", "ArrowUp": "Up", "ArrowDown": "Down",
+                "Delete": "Delete", "Home": "Home", "End": "End", " ": "space"}.get(name, name)
+
+    async def _os_key(self, name: str):
+        await asyncio.to_thread(self._os_send, {"op": "key", "name": self._key_name(name)})
+
+    async def _open_home(self) -> bool:
+        """Use the browser on the home machine. It has a real screen and a real network, which sign-in checks accept."""
+        base = os.environ.get("SANDBOX_BROWSER_CDP", "").strip()
+        if not base:
+            return False
+        try:
+            from patchright.async_api import async_playwright
+            ws = await asyncio.to_thread(self._cdp_ws, base)
+            self.pw = await async_playwright().start()
+            self.browser = await self.pw.chromium.connect_over_cdp(ws)
+            self.remote = True  # from here, closing must not shut down the home browser
+            self.ctx = self.browser.contexts[0] if self.browser.contexts else await self.browser.new_context()
+            self.page = await self.ctx.new_page()
+            for old in list(self.ctx.pages):
+                if old != self.page:
+                    await old.close()
+            # The home window is already 1280x800. Resizing it through the debugger is one of the
+            # checks Tesco's sign-in rejects, so leave the real window size alone.
+            self.page.set_default_timeout(10000)
+            await self._remember_chrome()
+            return True
+        except Exception as exc:
+            # Do not clear self.remote here. _close would then send Browser.close and quit the home Chrome.
+            message = str(exc).split("\n")[0][:200]
+            print("home browser unavailable:", type(exc).__name__, message, flush=True)
+            await self._close()
+            return False
+
+    async def _remember_chrome(self):
+        if not self.page:
+            return
+        try:
+            self._chrome = await self.page.evaluate("""() => ({
+                x: window.screenX + Math.max(0, (window.outerWidth - window.innerWidth) / 2),
+                y: window.screenY + Math.max(0, window.outerHeight - window.innerHeight),
+                iw: window.innerWidth, ih: window.innerHeight
+            })""")
+            self._chrome_at = time.time()
+        except Exception:
+            pass
+
+    async def _adopt_home(self):
+        """Attach to the browser already on screen. Do not open or close tabs: someone may be using one."""
+        if self.page:
+            return
+        base = os.environ.get("SANDBOX_BROWSER_CDP", "").strip()
+        if not base:
+            return
+        try:
+            from patchright.async_api import async_playwright
+            ws = await asyncio.to_thread(self._cdp_ws, base)
+            self.pw = await async_playwright().start()
+            self.browser = await self.pw.chromium.connect_over_cdp(ws)
+            self.remote = True
+            self.ctx = self.browser.contexts[0] if self.browser.contexts else await self.browser.new_context()
+            pages = list(self.ctx.pages)
+            usable = [p for p in pages if (p.url or "").startswith("http")]
+            self.page = (usable or pages)[-1] if pages else await self.ctx.new_page()
+            self.page.set_default_timeout(10000)
+            await self._remember_chrome()
+        except Exception as exc:
+            message = str(exc).split("\n")[0][:200]
+            print("home browser unavailable:", type(exc).__name__, message, flush=True)
+            await self._close()
+
+    def _adopt_remote(self):
+        if self.page or not os.environ.get("SANDBOX_BROWSER_CDP", "").strip():
+            return
+        if time.time() - self._adopt_failed_at < 3:
+            return
+        try:
+            asyncio.run_coroutine_threadsafe(self._adopt_home(), self.loop).result(timeout=8)
+        except Exception:
+            self._adopt_failed_at = time.time()
+        if not self.page:
+            self._adopt_failed_at = time.time()
+
+    def _remote_frame(self):
+        """JPEG of the home screen, taken on the Pi so a screenshot never blocks typing."""
+        import urllib.request
+        base = os.environ.get("SANDBOX_BROWSER_INPUT", "").strip()
+        if not base:
+            return None
+        try:
+            with urllib.request.urlopen(base.rstrip("/") + "/frame", timeout=2.5) as response:
+                data = response.read()
+                width = int(response.headers.get("X-Screen-Width") or 0)
+                height = int(response.headers.get("X-Screen-Height") or 0)
+        except Exception:
+            return None
+        if not data or width < 2 or height < 2:
+            return None
+        self._screen = (width, height)
+        return data
+
     async def _ensure(self):
         if self.page and self.browser.is_connected():
             return
         await self._close()
+        if os.environ.get("SANDBOX_BROWSER_CDP", "").strip():
+            # The server's own browser is the one shop sign-in rejects. Never substitute it
+            # when a home browser is configured: a failed attach must be visible, not silent.
+            if await self._open_home():
+                return
+            raise RuntimeError("The home browser is not running.")
+        headed = _headed_display()
         from playwright.async_api import async_playwright
         self.pw = await async_playwright().start()
         proxy = os.environ.get("SANDBOX_PROXY")  # optional, e.g. a residential proxy for sites that block data-centre addresses
-        self.browser = await self.pw.chromium.launch(executable_path=CHROME, headless=True, proxy=_proxy(proxy), args=[
+        args = [
             "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--mute-audio", "--disable-extensions",
-            "--disable-background-networking", "--disable-blink-features=AutomationControlled", "--js-flags=--max-old-space-size=384"])
+            "--disable-background-networking", "--disable-blink-features=AutomationControlled", "--window-size=1280,800",
+            "--js-flags=--max-old-space-size=384"]
+        if proxy:
+            args.append("--disable-quic")  # QUIC is UDP and would skip the proxy, leaking the server address
+        launch = dict(executable_path=CHROME, headless=not headed, proxy=_proxy(proxy), args=args)
+        if headed:
+            # --enable-automation is itself one of the checks Tesco's sign-in fails.
+            launch["ignore_default_args"] = ["--enable-automation"]
+        last_error = None
+        for _ in range(3):
+            try:
+                self.browser = await self.pw.chromium.launch(**launch)
+                last_error = None
+                break
+            except Exception as exc:  # the virtual screen sometimes is not ready for the first window
+                last_error = exc
+                await asyncio.sleep(0.4)
+        if last_error:
+            raise last_error
         # Headless Chromium announces itself ("HeadlessChrome", navigator.webdriver, software WebGL), which makes many sites
         # refuse to run their scripts, so present as an ordinary desktop Chrome, consistently: the user agent, the
         # client hints and the page's own view of itself must all agree or bot checks notice.
@@ -143,28 +352,25 @@ class Browser:
         major = full.split(".")[0]
         ua = f"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{major}.0.0.0 Safari/537.36"
         saved = STATE_FILE if self.persist and os.path.exists(STATE_FILE) else None
-        ctx = self.ctx = await self.browser.new_context(
+        context = dict(
             storage_state=saved, viewport={"width": 1280, "height": 800}, locale="en-GB", timezone_id="Europe/London",
-            user_agent=ua, extra_http_headers={"Accept-Language": "en-GB,en;q=0.9"})
-        await ctx.add_init_script(STEALTH_JS)
+            extra_http_headers={"Accept-Language": "en-GB,en;q=0.9"})
+        if not headed:
+            context["user_agent"] = ua  # a real window already has a normal Chrome user agent
+        ctx = self.ctx = await self.browser.new_context(**context)
+        if not headed:
+            await ctx.add_init_script(STEALTH_JS)  # the stand-ins are detectable on Tesco's sign-in, so a real window skips them
         self.ua = {"userAgent": ua, "acceptLanguage": "en-GB,en;q=0.9", "platform": "Linux x86_64", "userAgentMetadata": {
             "brands": [{"brand": "Chromium", "version": major}, {"brand": "Not_A Brand", "version": "24"}, {"brand": "Google Chrome", "version": major}],
             "fullVersionList": [{"brand": "Chromium", "version": full}, {"brand": "Not_A Brand", "version": "24.0.0.0"}, {"brand": "Google Chrome", "version": full}],
             "fullVersion": full, "platform": "Linux", "platformVersion": "6.1.0", "architecture": "x86", "model": "", "mobile": False}}
-
-        async def gate(route):
-            if route.request.resource_type == "media":  # no autoplaying video: it costs memory and tells Lark nothing
-                await route.abort()
-            else:
-                await route.continue_()
-
-        await ctx.route("**/*", gate)
         self.page = await ctx.new_page()
         self.page.set_default_timeout(10000)
-        try:
-            await (await ctx.new_cdp_session(self.page)).send("Emulation.setUserAgentOverride", self.ua)  # client hints that match the UA
-        except Exception:
-            pass
+        if not headed:
+            try:
+                await (await ctx.new_cdp_session(self.page)).send("Emulation.setUserAgentOverride", self.ua)  # client hints that match the UA
+            except Exception:
+                pass
 
     async def _save_state(self):
         if self.persist and self.ctx:
@@ -176,6 +382,32 @@ class Browser:
 
     async def _close(self):
         await self._save_state()
+        if self.remote:
+            # Leave the home browser running. Closing it would drop the screen the next visit needs.
+            if not self.persist and self.ctx:
+                try:
+                    await self.ctx.clear_cookies()
+                except Exception:
+                    pass
+            try:
+                # Closing the last tab quits the home Chrome, and the next visit would miss it.
+                if self.page and self.ctx and len(self.ctx.pages) <= 1:
+                    await self.ctx.new_page()
+                if self.page:
+                    await self.page.close()
+            except Exception:
+                pass
+            try:
+                if self.pw:
+                    await self.pw.stop()
+            except Exception:
+                pass
+            self.pw = self.browser = self.page = self.ctx = None
+            self.remote = False
+            self.cursor = None
+            self._screen = None
+            self._chrome = None
+            return
         self.ctx = None
         for obj, fn in ((self.browser, "close"), (self.pw, "stop")):
             try:
@@ -185,8 +417,13 @@ class Browser:
                 pass
         self.pw = self.browser = self.page = None
         self.cursor = None
+        self._screen = None
+        self._chrome = None
 
     def close_if_idle(self):
+        if self.remote and self.page and time.time() - self._chrome_at > 10:
+            self._chrome_at = time.time()
+            asyncio.run_coroutine_threadsafe(self._remember_chrome(), self.loop)
         if self.page and not self.hold and time.time() - self.last_used > IDLE_CLOSE:
             asyncio.run_coroutine_threadsafe(self._close(), self.loop)
 
@@ -249,25 +486,39 @@ class Browser:
             await self._point(target, action == "click")
             await asyncio.sleep(0.6)  # let the live view's cursor glide there before the page reacts
             if action == "click":
-                try:
-                    await target.click(timeout=2500)
-                except Exception:
-                    # Playwright waits for the element to be unobscured and still; pages with overlays or
-                    # animations stall it, so after a short wait click anyway, then fall back to a script click.
+                if self.remote:
+                    await self._os_click_box(target)
+                else:
                     try:
-                        await target.click(timeout=2000, force=True)
+                        await target.click(timeout=2500)
                     except Exception:
-                        await target.evaluate("e => e.click()")
+                        # Playwright waits for the element to be unobscured and still; pages with overlays or
+                        # animations stall it, so after a short wait click anyway, then fall back to a script click.
+                        try:
+                            await target.click(timeout=2000, force=True)
+                        except Exception:
+                            await target.evaluate("e => e.click()")
             else:
-                await target.fill(str(a.get("text", "")), timeout=4000)
-                if a.get("submit"):
-                    await target.press("Enter")
+                if self.remote:
+                    await self._os_click_box(target)
+                    await self._os_type(str(a.get("text", "")))
+                    if a.get("submit"):
+                        await self._os_key("Return")
+                else:
+                    await target.fill(str(a.get("text", "")), timeout=4000)
+                    if a.get("submit"):
+                        await target.press("Enter")
         elif action == "press":
             keys = a.get("keys")
             if isinstance(keys, list) and keys:
                 for k in keys[:100]:
-                    await page.keyboard.press(str(k))
+                    if self.remote:
+                        await self._os_key(str(k))
+                    else:
+                        await page.keyboard.press(str(k))
                     await page.wait_for_timeout(120)  # a game needs a moment to take each move
+            elif self.remote:
+                await self._os_key(str(a.get("key", "Enter")))
             else:
                 await page.keyboard.press(str(a.get("key", "Enter")))
         elif action == "scroll":
@@ -310,7 +561,10 @@ class Browser:
         self.cursor = {"x": round(min(max(x / size["width"], 0), 1), 4), "y": round(min(max(y / size["height"], 0), 1), 4),
                        "click": True, "seq": (self.cursor or {}).get("seq", 0) + 1}
         await asyncio.sleep(0.6)
-        await page.mouse.click(x, y)
+        if self.remote:
+            await self._os_click(x, y)
+        else:
+            await page.mouse.click(x, y)
 
     async def _point(self, target, click: bool):
         # The element's centre as a fraction of the visible page, measured in the page itself so it matches
@@ -327,10 +581,15 @@ class Browser:
             try:
                 persist = bool(a.get("persist"))
                 if persist != self.persist:
-                    await self._close()  # the switch changed: start a fresh browser in the new mode
                     self.persist = persist
+                    if not persist and self.ctx:  # turning it off forgets the home browser's saved sign-in too
+                        try:
+                            await self.ctx.clear_cookies()
+                        except Exception:
+                            pass
+                    await self._close()  # the switch changed: start a fresh browser in the new mode
                     if not persist and os.path.exists(STATE_FILE):
-                        os.unlink(STATE_FILE)  # turning it off forgets what was saved
+                        os.unlink(STATE_FILE)
                 out = await self._act(a)
                 await self._save_state()
                 return out
@@ -338,26 +597,74 @@ class Browser:
                 msg = str(e).strip().split("\n")[0][:300] or type(e).__name__
                 return {"error": f"Browser error: {msg}"}
 
+    def _save_later(self):
+        if not self.persist:
+            return
+        now = time.time()
+        if now - self._save_at < 2:
+            return
+        self._save_at = now
+        try:
+            asyncio.run_coroutine_threadsafe(self._save_state(), self.loop)
+        except Exception:
+            pass
+
+    def _input_screen(self, a: dict, screen) -> dict:
+        """Takeover against the home screen. Fractions are of that picture, and nothing here touches the debugger."""
+        if not self.page:
+            raise ValueError("No page is open.")
+        kind = a.get("type")
+        width, height = screen
+        if kind in ("click", "scroll"):
+            x = min(max(float(a.get("x", 0.5)), 0), 1) * width
+            y = min(max(float(a.get("y", 0.5)), 0), 1) * height
+            if kind == "click":
+                self._os_send({"op": "click", "x": x, "y": y})
+                self._save_later()
+            else:
+                self._os_send({"op": "scroll", "x": x, "y": y, "dy": max(-2000, min(2000, float(a.get("dy", 0))))})
+        elif kind == "key":
+            self._os_send({"op": "key", "name": self._key_name(str(a.get("key", ""))[:30])})
+            self._save_later()
+        elif kind == "text":
+            self._os_send({"op": "type", "text": str(a.get("text", ""))[:2000], "clear": False})
+        else:
+            raise ValueError("Unknown input.")
+        return {"ok": True}
+
     async def _input(self, a: dict) -> dict:
         """Mouse and keyboard from a person taking over the live view. Positions are fractions of the page."""
         if not self.page:
             raise ValueError("No page is open.")
         page = self.page
         kind = a.get("type")
-        size = page.viewport_size or {"width": 1280, "height": 800}
         if kind in ("click", "scroll"):
+            if self.remote:
+                size = await page.evaluate("() => ({width: innerWidth, height: innerHeight})")
+            else:
+                size = page.viewport_size or {"width": 1280, "height": 800}
             x = min(max(float(a.get("x", 0.5)), 0), 1) * size["width"]
             y = min(max(float(a.get("y", 0.5)), 0), 1) * size["height"]
             if kind == "click":
-                await page.mouse.click(x, y)
-                await page.wait_for_timeout(300)
+                if self.remote:
+                    await self._os_click(x, y)
+                else:
+                    await page.mouse.click(x, y)
+            elif self.remote:
+                await page.mouse.wheel(0, max(-2000, min(2000, float(a.get("dy", 0)))))
             else:
                 await page.mouse.move(x, y)
                 await page.mouse.wheel(0, max(-2000, min(2000, float(a.get("dy", 0)))))
         elif kind == "key":
-            await page.keyboard.press(str(a.get("key", ""))[:30])
+            if self.remote:
+                await self._os_key(str(a.get("key", ""))[:30])
+            else:
+                await page.keyboard.press(str(a.get("key", ""))[:30])
         elif kind == "text":
-            await page.keyboard.insert_text(str(a.get("text", ""))[:2000])
+            if self.remote:
+                await self._os_type(str(a.get("text", ""))[:2000], clear=False)
+            else:
+                await page.keyboard.insert_text(str(a.get("text", ""))[:2000])
         else:
             raise ValueError("Unknown input.")
         if kind in ("click", "key"):
@@ -366,6 +673,15 @@ class Browser:
 
     def input(self, a: dict) -> dict:
         self.last_used = time.time()
+        screen = self._screen if self.remote else None
+        if screen:
+            try:
+                return self._input_screen(a, screen)
+            except ValueError as e:
+                return {"error": str(e)}
+            except Exception as e:
+                text = str(e).strip().splitlines()[0][:200] if str(e).strip() else type(e).__name__
+                return {"error": f"Browser error: {text}"}
         try:
             return asyncio.run_coroutine_threadsafe(self._input(a), self.loop).result(timeout=15)
         except ValueError as e:
@@ -375,6 +691,12 @@ class Browser:
 
     async def _clear(self):
         async with self.acting:
+            self.persist = False
+            if self.ctx:
+                try:
+                    await self.ctx.clear_cookies()
+                except Exception:
+                    pass
             await self._close()
             if os.path.exists(STATE_FILE):
                 os.unlink(STATE_FILE)
@@ -396,8 +718,32 @@ class Browser:
         except Exception:
             return None
 
+    def view_cursor(self):
+        cursor = self.cursor
+        screen = self._screen
+        chrome = self._chrome
+        if not cursor or not screen or not chrome:
+            return cursor
+        try:
+            width, height = screen
+            x = (float(chrome["x"]) + float(cursor["x"]) * float(chrome["iw"])) / width
+            y = (float(chrome["y"]) + float(cursor["y"]) * float(chrome["ih"])) / height
+        except (KeyError, TypeError, ZeroDivisionError, ValueError):
+            return cursor
+        shown = dict(cursor)
+        shown["x"] = round(min(max(x, 0), 1), 4)
+        shown["y"] = round(min(max(y, 0), 1), 4)
+        return shown
+
     def frame(self) -> bytes | None:
         """The current page as a small JPEG for the live view, or None when no page is open."""
+        if os.environ.get("SANDBOX_BROWSER_CDP", "").strip():
+            self._adopt_remote()
+            if self.remote:
+                shot = self._remote_frame()
+                if shot is not None:
+                    return shot
+                self._screen = None
         try:
             return asyncio.run_coroutine_threadsafe(self._frame(), self.loop).result(timeout=6)
         except Exception:
@@ -520,7 +866,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply_bytes(204, b"", "image/jpeg")
                 return self.reply_bytes(200, data, "image/jpeg")
             if (method, url.path) == ("GET", "/browser/cursor"):
-                return self.reply(200, {"cursor": browser.cursor if browser.page else None})
+                return self.reply(200, {"cursor": browser.view_cursor() if browser.page else None})
             if (method, url.path) == ("POST", "/browser/input"):
                 r = browser.input(self.body())
                 return self.reply(400 if "error" in r else 200, r)
