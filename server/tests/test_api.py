@@ -475,6 +475,21 @@ r = c.portal.call(telegram.message_contact, "Sam", "On my way")
 run("auto contact gets agent messages directly", msgs(333)[-1]["text"] == "On my way")
 run("replies split into several messages and lose markdown", telegram._pieces("**Hi** there\n---\nsecond one\n\n---\n# Third") == ["Hi there", "second one", "Third"])
 run("a single reply stays one message", telegram._pieces("just one") == ["just one"])
+# owner knows its contacts; contact requests for tools wait for a tap; replies stream as separate messages
+brief = telegram.owner_brief()
+run("owner brief names the contact and message_contact", "Sam" in brief and "message_contact" in brief)
+st_ = telegram.load(); st_["contacts"][str(333)]["handle"] = "samb"; telegram.save(st_)
+run("brief shows the handle and wraps contact chat text as untrusted", "@samb" in telegram.owner_brief() and "UNTRUSTED CONTACT TEXT" in telegram.owner_brief())
+reply_ = "On it.\n[[PASS_ON: a screenshot of the router listing]]"
+st_ = telegram.load()
+c.portal.call(telegram._offer_task, "333", "Sam", "a screenshot of the router listing", "can you get me a screenshot of the router")
+offer = [p_ for m_, p_ in sent if m_ == "sendMessage" and p_["chat_id"] == 111][-1]
+run("contact request is offered to the owner with Do it / Ignore", "needs me" in offer["text"] and offer["reply_markup"]["inline_keyboard"][0][0]["text"] == "Do it")
+tid = list(telegram.load()["tasks"])[-1]
+tg({"callback_query": {"id": "qt", "from": {"id": 111}, "data": f"x:{tid}", "message": {"message_id": 3}}})
+run("ignoring a request drops it without running anything", tid not in telegram.load()["tasks"])
+m_ = telegram._PASS_ON.search(reply_)
+run("pass-on marker is recognised and stripped", m_ and m_.group(1).startswith("a screenshot") and telegram._PASS_ON.sub("", reply_).strip() == "On it.")
 from lark import files as _files  # noqa: E402
 png = _files.save(b"\x89PNG\r\n\x1a\n" + b"0" * 64)
 c.put(f"/api/telegram/contacts/{sam}", json={"policy": "draft"})

@@ -97,6 +97,12 @@ async def _execute(run: Run, name: str, key: str, model: str, history: list[dict
             notes = await memory.context(run.chat_id, history)
         except Exception:
             notes = ""  # memory must never stop a reply
+        if not memory.is_contact_chat(run.chat_id):
+            try:
+                from . import telegram
+                notes = f"{telegram.owner_brief()}\n\n{notes}".strip()
+            except Exception:
+                pass  # a problem with contacts must never stop a reply
         if run.chat_id == "telegram-owner":
             notes = f"{agent.TELEGRAM_PROMPT}\n\n{notes}".strip()
         async for ev in agent.run(name, key, model, history, notes):
