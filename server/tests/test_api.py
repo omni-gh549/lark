@@ -311,6 +311,123 @@ run("bad key at chat time gives error event", ev == [{"error": "Invalid API key 
 run("bad provider rejected", c.put("/api/settings", json={"provider": "nope"}).status_code == 400)
 run("role validation", c.post("/api/chat", json={"messages": [{"role": "system", "content": "x"}]}).status_code == 422)
 
+
+# ---- Telegram (the Bot API is faked) ----
+from lark import telegram  # noqa: E402
+
+sent = []
+
+
+async def fake_api(method, token=None, files_=None, _timeout=20, **params):
+    sent.append((method, params))
+    if method == "getMe":
+        return {"username": "lark_test_bot"}
+    return {"message_id": len(sent)}
+
+
+telegram.api = fake_api
+
+
+def tg(update):
+    c.portal.call(telegram.handle, update)
+
+
+def msgs(chat_id):
+    return [p for m, p in sent if m == "sendMessage" and p["chat_id"] == chat_id]
+
+
+def say_to_bot(uid, text, name="Someone"):
+    tg({"message": {"chat": {"id": uid, "type": "private"}, "from": {"id": uid, "first_name": name}, "text": text}})
+
+
+c.put("/api/settings", json={"provider": "openrouter", "models": {"openrouter": "a/model"}})
+r = c.put("/api/keys/telegram", json={"key": "123456:ABC-test-token"})
+run("telegram key saved, hint only", r.status_code == 200 and r.json()["telegram"]["key_hint"] == "oken" and "ABC-test" not in r.text)
+st = c.get("/api/telegram").json()
+run("telegram status", st["configured"] and st["bot"] == "lark_test_bot" and st["owner"] is None)
+run("telegram key test", "lark_test_bot" in c.post("/api/keys/telegram/test").json()["detail"])
+
+say_to_bot(999, "hello", "Stranger")
+run("stranger gets a polite refusal", "invited" in msgs(999)[-1]["text"])
+say_to_bot(111, "/start link-deadbeef", "Oscar")
+run("bad link code does not link", c.get("/api/telegram").json()["owner"] is None)
+url = c.post("/api/telegram/link").json()["url"]
+run("link url points at the bot", url.startswith("https://t.me/lark_test_bot?start=link-"))
+say_to_bot(111, "/start " + url.split("start=")[1], "Oscar")
+run("owner linked", c.get("/api/telegram").json()["owner"] == {"name": "Oscar"})
+say_to_bot(222, "/start link-" + url.split("link-")[1], "Mallory")
+run("link code is single use", c.get("/api/telegram").json()["owner"] == {"name": "Oscar"})
+
+say_to_bot(111, "hello there", "Oscar")
+run("owner chat reaches the agent", any("Echo: hello there" in m["text"] for m in msgs(111)))
+run("owner chat is saved", telegram.OWNER_CHAT in [x["id"] for x in c.get("/api/chats").json()["chats"]])
+say_to_bot(111, "/new", "Oscar")
+
+inv = c.post("/api/telegram/invites", json={"name": "Sam", "policy": "draft", "scope": "arrange dinner"}).json()["url"]
+token = inv.split("start=")[1]
+say_to_bot(333, "/start " + token, "Sam B")
+run("invite creates a contact", [x["name"] for x in c.get("/api/telegram").json()["contacts"]] == ["Sam"])
+run("contact is told it is an AI", "AI assistant" in msgs(333)[-1]["text"])
+run("owner is told about the new contact", "Sam joined" in msgs(111)[-1]["text"])
+say_to_bot(444, "/start " + token, "Replay")
+run("invite is single use", [x["name"] for x in c.get("/api/telegram").json()["contacts"]] == ["Sam"])
+
+before = len(msgs(333))
+say_to_bot(333, "Can we do 7pm?", "Sam B")
+draft = msgs(111)[-1]
+run("draft policy asks the owner first", "Reply to Sam:" in draft["text"] and "Echo: Can we do 7pm?" in draft["text"]
+    and draft["reply_markup"]["inline_keyboard"][0][0]["callback_data"].startswith("s:") and len(msgs(333)) == before)
+cb = draft["reply_markup"]["inline_keyboard"][0][0]["callback_data"]
+tg({"callback_query": {"id": "q1", "from": {"id": 999}, "data": cb, "message": {"message_id": 5}}})
+run("a stranger can't approve", len(msgs(333)) == before)
+tg({"callback_query": {"id": "q2", "from": {"id": 111}, "data": cb, "message": {"message_id": 5}}})
+run("owner approval sends the reply", len(msgs(333)) == before + 1 and "Echo: Can we do 7pm?" in msgs(333)[-1]["text"])
+tg({"callback_query": {"id": "q3", "from": {"id": 111}, "data": cb, "message": {"message_id": 5}}})
+run("an approved draft can't be sent twice", len(msgs(333)) == before + 1)
+
+sam = c.get("/api/telegram").json()["contacts"][0]["id"]
+r = c.put(f"/api/telegram/contacts/{sam}", json={"policy": "relay"})
+run("policy edit", r.json()["contacts"][0]["policy"] == "relay")
+before = len(msgs(333))
+say_to_bot(333, "ping", "Sam B")
+run("relay forwards to the owner only", msgs(111)[-1]["text"] == "Sam: ping" and len(msgs(333)) == before)
+c.put(f"/api/telegram/contacts/{sam}", json={"policy": "auto"})
+say_to_bot(333, "auto please", "Sam B")
+run("auto replies and tells the owner", "Echo: auto please" in msgs(333)[-1]["text"] and "Lark replied" in msgs(111)[-1]["text"])
+c.put(f"/api/telegram/contacts/{sam}", json={"policy": "blocked"})
+before_o, before_c = len(msgs(111)), len(msgs(333))
+say_to_bot(333, "hello?", "Sam B")
+run("blocked is ignored", len(msgs(111)) == before_o and len(msgs(333)) == before_c)
+run("bad policy rejected", c.put(f"/api/telegram/contacts/{sam}", json={"policy": "x"}).status_code == 422)
+
+c.put(f"/api/telegram/contacts/{sam}", json={"policy": "draft"})
+say_to_bot(111, "tools", "Oscar")
+run("owner's agent can message contacts", "message_contact" in msgs(111)[-1]["text"])
+r = c.portal.call(telegram.message_contact, "sam", "Running late")
+run("agent message waits for approval", "approve" in r and "Running late" in msgs(111)[-1]["text"])
+c.put(f"/api/telegram/contacts/{sam}", json={"policy": "auto"})
+r = c.portal.call(telegram.message_contact, "Sam", "On my way")
+run("auto contact gets agent messages directly", msgs(333)[-1]["text"] == "On my way")
+from lark import agent as _agent  # noqa: E402
+seen = []
+_loop = _agent.loop
+
+
+def spy(*a, **k):
+    seen.append(a[4])  # the tools offered to the model
+    return _loop(*a, **k)
+
+
+_agent.loop = spy
+say_to_bot(333, "tools", "Sam B")
+_agent.loop = _loop
+run("contacts' model has no tools", seen == [[]])
+
+r = c.delete(f"/api/telegram/contacts/{sam}")
+run("remove contact", r.json()["contacts"] == [])
+run("unlink owner", c.delete("/api/telegram/owner").json()["ok"] and c.get("/api/telegram").json()["owner"] is None)
+c.delete("/api/keys/telegram")
+
 c.delete("/api/keys/gateway")
 run("delete key", c.get("/api/settings").json()["providers"]["gateway"]["key_hint"] is None)
 

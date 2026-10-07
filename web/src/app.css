@@ -241,7 +241,10 @@ main { min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); grid-te
   flex: 1; min-width: 180px; padding: 9px 14px; border-radius: 999px; border: 1px solid var(--line);
   background: var(--glass-strong); outline: 0;
 }
-.field input:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+.field select {
+  padding: 9px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--glass-strong); outline: 0; cursor: pointer;
+}
+.field input:focus-visible, .field select:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
 .seg { display: inline-flex; padding: 4px; gap: 2px; border-radius: 999px; background: var(--glass-strong); }
 .seg button { padding: 6px 14px; border-radius: 999px; color: var(--ink-soft); }
 .seg button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }

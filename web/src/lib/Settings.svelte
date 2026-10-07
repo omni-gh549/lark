@@ -56,6 +56,56 @@
     app.settings = await api("/api/settings", { method: "PUT", body: { search } });
   }
 
+  let tg = $state(null); // { configured, bot, owner, contacts, error }
+  let tgNote = $state({ text: "", kind: "" });
+  let tgLink = $state("");
+  let invite = $state({ name: "", policy: "draft", scope: "" });
+  let inviteUrl = $state("");
+  const policyLabels = { draft: "Ask me first", auto: "Reply on its own", relay: "Just forward", blocked: "Blocked" };
+
+  const tgSay = (text, kind = "") => (tgNote = { text, kind });
+
+  async function loadTelegram() {
+    try {
+      tg = await api("/api/telegram");
+    } catch (e) {
+      tg = null;
+    }
+  }
+
+  async function tgDo(fn) {
+    try {
+      await fn();
+      tgNote = { text: "", kind: "" };
+    } catch (e) {
+      tgSay(e.message, "bad");
+    }
+  }
+
+  const makeLink = () => tgDo(async () => (tgLink = (await api("/api/telegram/link", { method: "POST" })).url));
+  const unlink = () => tgDo(async () => { await api("/api/telegram/owner", { method: "DELETE" }); tgLink = ""; await loadTelegram(); });
+  const makeInvite = () =>
+    tgDo(async () => {
+      inviteUrl = (await api("/api/telegram/invites", { method: "POST", body: invite })).url;
+      invite = { name: "", policy: invite.policy, scope: "" };
+    });
+  const editContact = (c, body) =>
+    tgDo(async () => {
+      Object.assign(c, body);
+      await api(`/api/telegram/contacts/${c.id}`, { method: "PUT", body });
+    });
+  const removeContact = (c) =>
+    tgDo(async () => {
+      await api(`/api/telegram/contacts/${c.id}`, { method: "DELETE" });
+      await loadTelegram();
+    });
+
+  $effect(() => {
+    // refresh when the bot token is added or removed
+    s?.telegram?.key_hint;
+    loadTelegram();
+  });
+
   let browserNote = $state({ text: "", kind: "" });
 
   async function setCookies(on) {
@@ -287,6 +337,63 @@
       </div>
     </div>
 
+    {/if}
+
+    {#if s.telegram}
+    <div class="group">
+      <h2>Telegram</h2>
+      <div class="rows">
+        {@render keyRow("telegram", s.telegram)}
+        {#if tg?.configured}
+          <div class="row">
+            <div class="row-head">
+              <span class="row-title">{tg.owner ? `Linked to ${tg.owner.name}` : "Your account"}</span>
+              <span class="meta">{tg.bot ? `@${tg.bot}` : ""}</span>
+            </div>
+            {#if tg.error}<p class="status bad">{tg.error}</p>{/if}
+            <p class="meta" style="margin:0">
+              {tg.owner ? "Chat with Lark in Telegram like here. /new starts over, /stop cancels." : "Link your Telegram so you can chat with Lark there and approve its messages to other people."}
+            </p>
+            <div class="row-actions">
+              <button class="btn" onclick={makeLink}>{tg.owner ? "Link a different account" : "Link my Telegram"}</button>
+              {#if tg.owner}<button class="btn" onclick={unlink}>Unlink</button>{/if}
+            </div>
+            {#if tgLink}
+              <p class="meta" style="margin:0">Open this in Telegram within 15 minutes and press Start: <a href={tgLink} target="_blank" rel="noopener noreferrer">{tgLink}</a></p>
+            {/if}
+          </div>
+          <div class="row">
+            <span class="row-title">People</span>
+            <p class="meta" style="margin:0">
+              Lark can message people you invite, from its own account. They only see an AI assistant. Anything they write goes to a model with no tools and no access to your data.
+            </p>
+            {#each tg.contacts as c (c.id)}
+              <div class="field" style="flex-wrap:wrap">
+                <span class="row-title" style="min-width:90px">{c.name}</span>
+                <select aria-label="What Lark does with messages from {c.name}" value={c.policy} onchange={(e) => editContact(c, { policy: e.currentTarget.value })}>
+                  {#each Object.entries(policyLabels) as [v, l]}<option value={v}>{l}</option>{/each}
+                </select>
+                <input value={c.scope} placeholder="What Lark may help them with" aria-label="Scope for {c.name}" maxlength="500"
+                  onchange={(e) => editContact(c, { scope: e.currentTarget.value })} />
+                <button class="btn" onclick={() => removeContact(c)}>Remove</button>
+              </div>
+            {/each}
+            <form class="field" style="flex-wrap:wrap" onsubmit={(e) => { e.preventDefault(); makeInvite(); }}>
+              <input bind:value={invite.name} placeholder="Name" aria-label="Name" maxlength="40" required />
+              <select bind:value={invite.policy} aria-label="Policy">
+                {#each Object.entries(policyLabels) as [v, l]}<option value={v}>{l}</option>{/each}
+              </select>
+              <input bind:value={invite.scope} placeholder="What Lark may help them with" aria-label="Scope" maxlength="500" />
+              <button class="btn primary" disabled={!invite.name.trim() || !tg.bot}>Create invite link</button>
+            </form>
+            {#if inviteUrl}
+              <p class="meta" style="margin:0">Send them this link (works once, for a week): <a href={inviteUrl} target="_blank" rel="noopener noreferrer">{inviteUrl}</a></p>
+            {/if}
+            <p class="status {tgNote.kind}">{tgNote.text}</p>
+          </div>
+        {/if}
+      </div>
+    </div>
     {/if}
 
     <div class="group">

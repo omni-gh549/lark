@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -8,12 +9,19 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import agent, auth, chats, files, providers, runs, sandbox, search, vault
+from . import agent, auth, chats, files, providers, runs, sandbox, search, telegram, vault
 
-KEY_NAMES = set(providers.PROVIDERS) | set(search.SEARCH_PROVIDERS)
+KEY_NAMES = set(providers.PROVIDERS) | set(search.SEARCH_PROVIDERS) | {"telegram"}
 DIST = Path(os.environ.get("LARK_DIST", Path(__file__).resolve().parents[2] / "web" / "dist"))
 
-app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+@asynccontextmanager
+async def lifespan(_app):
+    poller = asyncio.ensure_future(telegram.poll())  # the Telegram bot, when a token is saved
+    yield
+    poller.cancel()
+
+
+app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
 
 def err(status: int, message: str) -> JSONResponse:
@@ -78,6 +86,7 @@ def view_settings() -> dict:
             name: {"label": p["label"], "keys_url": p["keys_url"], "key_hint": vault.key_hint(name)}
             for name, p in providers.PROVIDERS.items()
         },
+        "telegram": {"label": "Telegram bot", "keys_url": "https://t.me/BotFather", "key_hint": vault.key_hint("telegram")},
         "search_providers": {
             name: {"label": p["label"], "keys_url": p["keys_url"], "key_hint": vault.key_hint(name)}
             for name, p in search.SEARCH_PROVIDERS.items()
@@ -118,6 +127,8 @@ async def put_key(name: str, body: KeyIn):
     if name not in KEY_NAMES:
         return err(404, "Unknown provider.")
     vault.set_key(name, body.key.strip())
+    if name == "telegram":
+        telegram.poke()
     return view_settings()
 
 
@@ -137,12 +148,84 @@ async def test_key(name: str):
     if not key:
         return err(400, "No key saved.")
     try:
+        if name == "telegram":
+            me = await telegram.api("getMe", key)
+            return {"ok": True, "detail": f"Bot @{me['username']} is reachable."}
         if name in search.SEARCH_PROVIDERS:
             rows = await search.search(name, key, "test", 1)
             return {"ok": True, "detail": "Key works." if rows is not None else ""}
         return {"ok": True, "detail": await providers.check_key(name, key)}
     except Exception as e:
         return err(400, str(e) if isinstance(e, RuntimeError) else "Could not reach the provider.")
+
+
+class ContactIn(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
+    policy: str = Field(default="draft", pattern="^(draft|auto|relay|blocked)$")
+    scope: str = Field(default="", max_length=500)
+
+
+class ContactEdit(BaseModel):
+    policy: str | None = Field(default=None, pattern="^(draft|auto|relay|blocked)$")
+    scope: str | None = Field(default=None, max_length=500)
+
+
+@app.get("/api/telegram")
+async def telegram_status():
+    out = {"configured": bool(vault.get_key("telegram")), **telegram.view(), "error": telegram.status["error"], "bot": None}
+    if out["configured"]:
+        try:
+            out["bot"] = (await telegram.bot_info())["username"]
+        except telegram.TelegramError as e:
+            out["error"] = str(e)
+    return out
+
+
+@app.post("/api/telegram/link")
+async def telegram_link():
+    try:
+        return {"url": await telegram.link_url()}
+    except telegram.TelegramError as e:
+        return err(400, str(e))
+
+
+@app.delete("/api/telegram/owner")
+async def telegram_unlink():
+    st = telegram.load()
+    st["owner"] = None
+    telegram.save(st)
+    return {"ok": True}
+
+
+@app.post("/api/telegram/invites")
+async def telegram_invite(body: ContactIn):
+    try:
+        return {"url": await telegram.invite_url(body.name.strip(), body.policy, body.scope.strip())}
+    except telegram.TelegramError as e:
+        return err(400, str(e))
+
+
+@app.put("/api/telegram/contacts/{cid}")
+async def telegram_edit_contact(cid: str, body: ContactEdit):
+    st = telegram.load()
+    c = st["contacts"].get(cid)
+    if not c:
+        return err(404, "No such contact.")
+    if body.policy:
+        c["policy"] = body.policy
+    if body.scope is not None:
+        c["scope"] = body.scope.strip()
+    telegram.save(st)
+    return telegram.view()
+
+
+@app.delete("/api/telegram/contacts/{cid}")
+async def telegram_remove_contact(cid: str):
+    st = telegram.load()
+    st["contacts"].pop(cid, None)
+    telegram.save(st)
+    chats.delete(telegram.contact_chat_id(cid))
+    return telegram.view()
 
 
 @app.get("/api/providers/{name}/models")
