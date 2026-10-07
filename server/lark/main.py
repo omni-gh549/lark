@@ -4,13 +4,14 @@ import os
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import agent, auth, chats, files, memory, providers, runs, sandbox, search, telegram, vault
+from . import agent, auth, chats, files, memory, providers, runs, sandbox, search, telegram, tools, vault
 
 KEY_NAMES = set(providers.PROVIDERS) | set(search.SEARCH_PROVIDERS) | {"telegram"}
 DIST = Path(os.environ.get("LARK_DIST", Path(__file__).resolve().parents[2] / "web" / "dist"))
@@ -544,6 +545,42 @@ async def browser_cursor():
     if not sandbox.configured():
         return err(404, "No sandbox.")
     return {"cursor": await sandbox.cursor()}
+
+
+class BrowserInput(BaseModel):
+    type: Literal["click", "scroll", "key", "text"]
+    x: float | None = Field(default=None, ge=0, le=1)
+    y: float | None = Field(default=None, ge=0, le=1)
+    dy: float | None = Field(default=None, ge=-2000, le=2000)
+    key: str | None = Field(default=None, max_length=30)
+    text: str | None = Field(default=None, max_length=2000)
+
+
+@app.post("/api/browser/input")
+async def browser_input(body: BrowserInput):
+    """Mouse and keyboard from the person taking over the live view. Never logged and never shown to the model."""
+    if not sandbox.configured():
+        return err(404, "No sandbox.")
+    tools.LOGIN["last_input"] = time.time()
+    try:
+        await sandbox.browser_input(body.model_dump(exclude_none=True))
+    except sandbox.SandboxError as e:
+        return err(502, str(e))
+    return {"ok": True}
+
+
+@app.get("/api/browser/login")
+async def browser_login_state():
+    return {"pending": tools.LOGIN["pending"]}
+
+
+@app.post("/api/browser/login/done")
+async def browser_login_done():
+    ev = tools.LOGIN["event"]
+    if not ev:
+        return {"ok": True}
+    ev.set()
+    return {"ok": True}
 
 
 @app.post("/api/browser/clear")

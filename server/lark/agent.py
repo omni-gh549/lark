@@ -47,6 +47,9 @@ def system_prompt(available: list[tools.Tool], sub: bool = False) -> str:
                      "those only see the page's no-JavaScript fallback. "
                      "Don't start a second browser in the sandbox (Playwright, Chromium and the like): memory is limited and it can crash "
                      "the sandbox. To read the game board or page state, use the browser tool's snapshot.")
+    if "request_login" in names:
+        lines.append("For logins, two-step codes and CAPTCHAs, call request_login and the user signs in on the live browser themselves. "
+                     "Never ask for passwords in chat. On a site the user signed in to, confirm with them before paying, ordering or deleting anything.")
     if "remember" in names:
         lines.append("You have a long-term memory shared across all chats. Notes from it come with each conversation. Save things worth keeping "
                      "with remember (people, preferences, projects, plans, corrections) even if the background learner would catch them, "
@@ -54,6 +57,9 @@ def system_prompt(available: list[tools.Tool], sub: bool = False) -> str:
     if "message_contact" in names:
         lines.append("You can message the owner's Telegram contacts with message_contact, only when asked to. Unless a contact is on auto, "
                      "the owner approves each message first on Telegram, so say that it's waiting for their approval, not that it was sent.")
+    if "telegram_edit" in names:
+        lines.append("On Telegram you can list your recent messages, edit or delete your own and react (telegram_messages, telegram_edit, telegram_delete, "
+                     "telegram_react). You cannot see whether anyone read a message, only replies and reactions, so never say something was read.")
     if "subagent" in names:
         lines.append("You can delegate to subagents for research or long jobs, several at once. Check what they return before relying on it.")
     if available:

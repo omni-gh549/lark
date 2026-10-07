@@ -55,6 +55,17 @@ async def browse(args: dict) -> dict:
     return await _call("POST", "/browser", json=keep, timeout=100)
 
 
+async def browser_input(body: dict) -> None:
+    await _call("POST", "/browser/input", json=body, timeout=20)
+
+
+async def browser_hold(on: bool) -> None:
+    try:
+        await _call("POST", "/browser/hold", json={"on": on}, timeout=5)
+    except SandboxError:
+        pass
+
+
 async def clear_browser() -> None:
     await _call("POST", "/browser/clear", timeout=40)
 

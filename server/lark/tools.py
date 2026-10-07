@@ -2,8 +2,10 @@
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
+import asyncio
 import base64
 import re
+import time
 
 from . import files, memory, sandbox, search, vault
 
@@ -109,6 +111,8 @@ async def browser(args: dict):
     action = _str(args, "action")
     if action not in ("goto", "click", "type", "press", "scroll", "back", "snapshot", "screenshot"):
         raise ToolError("Unknown action.")
+    if time.time() - LOGIN.get("last_input", 0) < 8:
+        raise ToolError("The user is controlling the browser right now. Wait a moment, then try again.")
     try:
         r = await sandbox.browse(args)
     except sandbox.SandboxError as e:
@@ -189,6 +193,48 @@ BROWSER = Tool(
           "submit": {"type": "boolean"}, "key": {"type": "string"}, "x": {"type": "number"}, "y": {"type": "number"},
           "keys": {"type": "array", "items": {"type": "string"}}, "direction": {"type": "string"}}, ["action"]),
     browser, _browser_detail)
+
+
+# A person signing in on the live browser view. What they type goes straight to the page: never to the model.
+LOGIN: dict = {"pending": None, "event": None, "took_over": False, "last_input": 0.0}
+LOGIN_WAIT = 20 * 60  # how long Lark waits for someone to sign in
+
+
+async def request_login(args: dict):
+    from . import telegram
+    site, reason = _str(args, "site"), str(args.get("reason") or "").strip()
+    if LOGIN["pending"]:
+        raise ToolError("Someone is already being asked to sign in.")
+    event = asyncio.Event()
+    LOGIN.update(pending={"site": site[:120], "reason": reason[:300]}, event=event, took_over=False)
+    await sandbox.browser_hold(True)
+    if memory.CURRENT_CHAT.get() == telegram.OWNER_CHAT:
+        try:
+            await telegram.notify_owner(f"I need you to sign in{' to ' + site if site else ''}. Open Lark on the web and tap Take over on the browser window.")
+        except telegram.TelegramError:
+            pass
+    try:
+        try:
+            await asyncio.wait_for(event.wait(), LOGIN_WAIT)
+        except asyncio.TimeoutError:
+            raise ToolError("Nobody signed in. Carry on without it or ask again.")
+        try:
+            r = await sandbox.browse({"action": "snapshot"})
+        except sandbox.SandboxError as e:
+            raise ToolError(str(e))
+        return "The user finished signing in themselves. Here is the page now:\n" + clip(r["snapshot"], 9000)
+    finally:
+        LOGIN.update(pending=None, event=None, took_over=False)
+        await sandbox.browser_hold(False)
+
+
+REQUEST_LOGIN = Tool(
+    "request_login", "Sign-in",
+    "Ask the user to sign in on the browser themselves, for a login page, a two-step code, a CAPTCHA or a 'sign in with' pop-up. "
+    "The user takes over the live browser view and signs in; you wait and then get the page back. Never ask for passwords in chat "
+    "and never type a password yourself. Give the site and a short reason.",
+    _obj({"site": {"type": "string"}, "reason": {"type": "string"}}, ["site"]),
+    request_login, lambda a: str(a.get("site", "")))
 
 
 SHOW_IMAGE = Tool(
@@ -302,6 +348,46 @@ async def message_contact(args: dict):
         raise ToolError(str(e))
 
 
+async def _tg(name: str, *a):
+    from . import telegram
+    try:
+        r = getattr(telegram, name)(*a)
+        return await r if asyncio.iscoroutine(r) else r
+    except telegram.TelegramError as e:
+        raise ToolError(str(e))
+
+
+def _mid(args):
+    return args.get("message_id") if isinstance(args.get("message_id"), int) else None
+
+
+_WHO = {"who": {"type": "string", "description": "a contact's name; leave empty for the owner"}}
+TELEGRAM_TOOLS = [
+    Tool("telegram_messages", "Telegram messages",
+         "List recent messages in a Telegram chat with their numbers, who wrote them and any reactions. Use it to find 'my last message to Mum'. "
+         "Telegram never tells a bot whether a message was read; only a reply or reaction shows it was seen. Don't claim more.",
+         _obj(dict(_WHO), []), lambda a: _tg("recent", str(a.get("who") or "")),
+         lambda a: str(a.get("who") or "owner")),
+    Tool("telegram_edit", "Edit Telegram message",
+         "Edit one of your own Telegram messages (the latest one unless you give message_id). Use exactly the new wording the user gave. "
+         "Edits to contacts need the owner's approval unless the contact is on auto.",
+         _obj({**_WHO, "text": {"type": "string"}, "message_id": {"type": "integer"}}, ["text"]),
+         lambda a: _tg("edit_message", str(a.get("who") or ""), _str(a, "text"), _mid(a)),
+         lambda a: str(a.get("text", ""))[:80]),
+    Tool("telegram_delete", "Delete Telegram message",
+         "Delete one of your own Telegram messages (the latest one unless you give message_id). Telegram only allows this for about 48 hours "
+         "after sending. Deleting from a contact's chat needs the owner's approval unless the contact is on auto.",
+         _obj({**_WHO, "message_id": {"type": "integer"}}, []),
+         lambda a: _tg("delete_message", str(a.get("who") or ""), _mid(a)),
+         lambda a: str(a.get("who") or "owner")),
+    Tool("telegram_react", "React on Telegram",
+         "React to a Telegram message with one emoji (the latest message unless you give message_id). An empty emoji removes your reaction.",
+         _obj({**_WHO, "emoji": {"type": "string"}, "message_id": {"type": "integer"}}, ["emoji"]),
+         lambda a: _tg("react", str(a.get("who") or ""), str(a.get("emoji") or ""), _mid(a)),
+         lambda a: str(a.get("emoji", ""))),
+]
+
+
 MESSAGE_CONTACT = Tool(
     "message_contact", "Message contact",
     "Send a Telegram message to one of the owner's contacts, from Lark's own Telegram account. Use it only when the owner asks, and send exactly the wording they gave you. Call it again to send more than one message. "
@@ -319,8 +405,10 @@ async def available() -> list[Tool]:
         tools += MEMORY_TOOLS
     if telegram.contacts_ready():
         tools.append(MESSAGE_CONTACT)
+    if telegram.owner_ready():
+        tools += TELEGRAM_TOOLS
     if sandbox.configured():
         tools += [RUN_COMMAND, READ_FILE, WRITE_FILE, SHOW_IMAGE]
         if await sandbox.has_browser():
-            tools.append(BROWSER)
+            tools += [BROWSER, REQUEST_LOGIN]
     return tools

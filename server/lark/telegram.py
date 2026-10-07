@@ -109,6 +109,17 @@ async def download(file_id: str) -> bytes | None:
         return None
 
 
+def _log(chat_id, mid, by: str, text: str = ""):
+    """Remember messages (ids, who wrote them, reactions) so Lark can edit, delete or react to them later."""
+    if not isinstance(mid, int):
+        return
+    st = load()
+    entries = st.setdefault("log", {}).setdefault(str(chat_id), [])
+    entries.append({"id": mid, "by": by, "text": text[:300], "ts": time.time()})
+    del entries[:-40]
+    save(st)
+
+
 async def say(chat_id: int, text: str, **extra):
     """Sends text in chunks Telegram accepts. Plain text: nothing from a contact is ever interpreted as markup."""
     text = text.strip() or "(empty reply)"
@@ -116,7 +127,14 @@ async def say(chat_id: int, text: str, **extra):
     last = None
     for i, chunk in enumerate(chunks):
         last = await api("sendMessage", chat_id=chat_id, text=chunk, **(extra if i == len(chunks) - 1 else {}))
+        _log(chat_id, (last or {}).get("message_id"), "lark", chunk)
     return last
+
+
+async def notify_owner(text: str):
+    st = load()
+    if st["owner"]:
+        await say(st["owner"]["id"], text)
 
 
 async def send_photo(chat_id: int, name: str, caption: str = "", **extra):
@@ -129,9 +147,10 @@ async def send_photo(chat_id: int, name: str, caption: str = "", **extra):
         params["reply_markup"] = json.dumps(extra["reply_markup"])
     data = p.read_bytes()
     try:
-        await api("sendPhoto", files_={"photo": (name, data)}, _timeout=60, **params)
+        sent = await api("sendPhoto", files_={"photo": (name, data)}, _timeout=60, **params)
     except TelegramError:
-        await api("sendDocument", files_={"document": (name, data)}, _timeout=60, **params)
+        sent = await api("sendDocument", files_={"document": (name, data)}, _timeout=60, **params)
+    _log(chat_id, (sent or {}).get("message_id"), "lark", f"[image] {caption}")
 
 
 _me: dict = {}
@@ -222,6 +241,8 @@ async def handle(update: dict):
     try:
         if "callback_query" in update:
             await _on_button(update["callback_query"])
+        elif "message_reaction" in update:
+            _on_reaction(update["message_reaction"])
         elif "message" in update:
             m = update["message"]
             if m.get("chat", {}).get("type") == "private" and m.get("from"):
@@ -232,10 +253,24 @@ async def handle(update: dict):
         log.exception("telegram: failed handling an update")  # one bad message must never stop the bot
 
 
+def _on_reaction(r: dict):
+    """A person reacted to one of Lark's messages: the closest thing to 'seen' a bot can get."""
+    chat_id = str((r.get("chat") or {}).get("id"))
+    st = load()
+    for e in st.get("log", {}).get(chat_id, []):
+        if e["id"] == r.get("message_id"):
+            e["reactions"] = [x.get("emoji", "?") for x in r.get("new_reaction", []) if x.get("type") == "emoji"]
+            e["reacted"] = time.time()
+            save(st)
+            return
+
+
 async def _on_message(m: dict):
     chat_id = m["chat"]["id"]
     user = m["from"]
     text = (m.get("text") or m.get("caption") or "").strip()
+    if not text.startswith("/start"):
+        _log(chat_id, m.get("message_id"), "them", text or "[photo]")
     st = load()
     owner = st["owner"]
     if text.startswith("/start"):
@@ -414,6 +449,39 @@ async def _from_contact(st: dict, cid: str, contact: dict, text: str):
     await _draft(cid, reply, f"{contact['name']} wrote: {text}")
 
 
+async def _apply(cid: str, d: dict):
+    """Carry out an approved draft: a new message, an edit or a delete."""
+    if d.get("op") == "edit":
+        await _edit(int(cid), d["mid"], d["text"])
+    elif d.get("op") == "delete":
+        await api("deleteMessage", chat_id=int(cid), message_id=d["mid"])
+        _forget(cid, d["mid"])
+    else:
+        await _deliver(cid, d["text"], d.get("image", ""))
+
+
+def _forget(chat_id, mid):
+    st = load()
+    entries = st.get("log", {}).get(str(chat_id), [])
+    entries[:] = [e for e in entries if e["id"] != mid]
+    save(st)
+
+
+async def _edit(chat_id: int, mid: int, text: str):
+    try:
+        await api("editMessageText", chat_id=chat_id, message_id=mid, text=text[:4000])
+    except TelegramError as e:
+        if "no text" not in str(e).lower():
+            raise
+        await api("editMessageCaption", chat_id=chat_id, message_id=mid, caption=text[:1000])
+    st = load()
+    for e in st.get("log", {}).get(str(chat_id), []):
+        if e["id"] == mid:
+            e["text"] = text[:300]
+            e["edited"] = time.time()
+    save(st)
+
+
 async def _deliver(cid: str, text: str, image: str = ""):
     if image:
         if len(text) <= 1000:
@@ -429,19 +497,25 @@ async def _deliver(cid: str, text: str, image: str = ""):
     chats.save(chat, doc["messages"][-40:] + [{"role": "assistant", "content": note}])
 
 
-async def _draft(cid: str, text: str, context: str = "", image: str = ""):
+async def _draft(cid: str, text: str, context: str = "", image: str = "", op: str = "send", mid: int = 0):
     """Parks a message for the owner to approve with a button."""
     st = load()
     if not st["owner"]:
         raise TelegramError("Link your Telegram account in Settings first, so I can ask you to approve messages.")
     did = secrets.token_hex(6)
-    st["drafts"][did] = {"to": cid, "text": text, "created": time.time(), **({"image": image} if image else {})}
+    st["drafts"][did] = {"to": cid, "text": text, "created": time.time(), **({"image": image} if image else {}),
+                         **({"op": op, "mid": mid} if op != "send" else {})}
     save(st)
     name = st["contacts"][cid]["name"]
     head = f"{context}\n\n" if context else ""
     buttons = {"reply_markup": {"inline_keyboard": [[
         {"text": "Send", "callback_data": f"s:{did}"}, {"text": "Dismiss", "callback_data": f"d:{did}"}]]}}
-    body = f"{head}Reply to {name} (with the image shown):\n{text}" if image else f"{head}Reply to {name}:\n{text}"
+    if op == "delete":
+        body = f"{head}Delete this message to {name}:\n{text}"
+    elif op == "edit":
+        body = f"{head}Edit a message to {name} to say:\n{text}"
+    else:
+        body = f"{head}Reply to {name} (with the image shown):\n{text}" if image else f"{head}Reply to {name}:\n{text}"
     if image and len(body) <= 1000:
         await send_photo(st["owner"]["id"], image, body, **buttons)
     else:
@@ -462,7 +536,7 @@ async def _on_button(q: dict):
     if not draft:
         await api("answerCallbackQuery", callback_query_id=q["id"], text="That one is already handled.")
     elif action == "s" and draft["to"] in st["contacts"] and st["contacts"][draft["to"]]["policy"] != "blocked":
-        await _deliver(draft["to"], draft["text"], draft.get("image", ""))
+        await _apply(draft["to"], draft)
         await api("answerCallbackQuery", callback_query_id=q["id"], text="Sent.")
     else:
         await api("answerCallbackQuery", callback_query_id=q["id"], text="Dismissed.")
@@ -489,6 +563,97 @@ async def message_contact(name: str, text: str, image: str = "") -> str:
         return f"Sent to {c['name']}."
     await _draft(cid, text, "Lark wants to send a message.", image)
     return f"Asked the owner on Telegram to approve this message to {c['name']}. It goes out when they tap Send."
+
+
+# ---- Lark editing, deleting and reacting to its own messages ----------------------------------------------------
+
+SEEN_NOTE = ("Telegram never tells a bot whether a message was read. A reply or a reaction is the only sign, and those are shown below when they exist.")
+
+
+def owner_ready() -> bool:
+    return bool(vault.get_key("telegram") and load()["owner"])
+
+
+def _who(st: dict, who: str):
+    """(chat id, contact or None) for 'me'/the owner or a contact's name."""
+    who = (who or "").strip()
+    if who.lower() in ("", "me", "owner", "oscar", "you") or (st["owner"] and who.lower() == str(st["owner"].get("name", "")).lower()):
+        if not st["owner"]:
+            raise TelegramError("Telegram isn't linked yet.")
+        return str(st["owner"]["id"]), None
+    cid, c = find_contact(st, who)
+    if not c:
+        names = ", ".join(x["name"] for x in st["contacts"].values()) or "none yet"
+        raise TelegramError(f"No contact called {who!r}. Contacts: {names}. Leave it empty for the owner.")
+    if c["policy"] == "blocked":
+        raise TelegramError(f"{c['name']} is blocked.")
+    return cid, c
+
+
+def _pick(st: dict, chat: str, mid, by: str | None) -> dict:
+    entries = st.get("log", {}).get(chat, [])
+    if mid:
+        for e in entries:
+            if e["id"] == int(mid):
+                return e
+        raise TelegramError("I don't have that message number. List recent ones first.")
+    for e in reversed(entries):
+        if by is None or e["by"] == by:
+            return e
+    raise TelegramError("I haven't sent anything in that chat that I still know about.")
+
+
+def _ago(ts: float) -> str:
+    s = int(time.time() - ts)
+    return f"{s // 86400}d ago" if s >= 86400 else f"{s // 3600}h ago" if s >= 3600 else f"{max(s // 60, 1)}m ago"
+
+
+def recent(who: str) -> str:
+    st = load()
+    chat, c = _who(st, who)
+    entries = st.get("log", {}).get(chat, [])[-15:]
+    if not entries:
+        return f"No messages remembered in that chat. {SEEN_NOTE}"
+    lines = []
+    for e in entries:
+        extra = (f" (reacted {' '.join(e['reactions'])} {_ago(e['reacted'])})" if e.get("reactions") else "") + (" (edited)" if e.get("edited") else "")
+        lines.append(f"[{e['id']}] {'Lark' if e['by'] == 'lark' else (c['name'] if c else 'owner')} {_ago(e['ts'])}: {e['text']}{extra}")
+    return "\n".join(lines) + f"\n{SEEN_NOTE}"
+
+
+async def edit_message(who: str, text: str, mid=None) -> str:
+    st = load()
+    chat, c = _who(st, who)
+    e = _pick(st, chat, mid, "lark")
+    if e["by"] != "lark":
+        raise TelegramError("I can only edit my own messages.")
+    if c and c["policy"] != "auto":
+        await _draft(chat, text, "Lark wants to edit a message it sent.", op="edit", mid=e["id"])
+        return f"Asked the owner on Telegram to approve the edit to {c['name']}. It changes when they tap Send."
+    await _edit(int(chat), e["id"], text)
+    return "Edited."
+
+
+async def delete_message(who: str, mid=None) -> str:
+    st = load()
+    chat, c = _who(st, who)
+    e = _pick(st, chat, mid, "lark")
+    if e["by"] != "lark":
+        raise TelegramError("I can only delete my own messages.")
+    if c and c["policy"] != "auto":
+        await _draft(chat, e["text"], "Lark wants to delete a message it sent.", op="delete", mid=e["id"])
+        return f"Asked the owner on Telegram to approve deleting it from {c['name']}'s chat. It goes when they tap Send."
+    await api("deleteMessage", chat_id=int(chat), message_id=e["id"])
+    _forget(chat, e["id"])
+    return "Deleted."
+
+
+async def react(who: str, emoji: str, mid=None) -> str:
+    st = load()
+    chat, c = _who(st, who)
+    e = _pick(st, chat, mid, None)
+    await api("setMessageReaction", chat_id=int(chat), message_id=e["id"], reaction=[{"type": "emoji", "emoji": emoji}] if emoji else [])
+    return "Reacted." if emoji else "Reaction removed."
 
 
 # ---- the polling loop ----------------------------------------------------------------------------------------
@@ -520,7 +685,7 @@ async def poll():
                 log.warning("telegram: polling started")
             st = load()
             updates = await api("getUpdates", token, offset=st["offset"], timeout=25, _timeout=40,
-                                allowed_updates=["message", "callback_query"])
+                                allowed_updates=["message", "callback_query", "message_reaction"])
             status["error"] = None
             status["polled"] = time.time()
             for u in updates:

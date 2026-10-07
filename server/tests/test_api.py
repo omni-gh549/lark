@@ -119,13 +119,13 @@ os.environ.update(LARK_SANDBOX_URL="http://127.0.0.1:8796", LARK_SANDBOX_TOKEN="
 st = c.get("/api/sandbox").json()
 run("sandbox status ok", st["configured"] and st["ok"])
 ev = chat("tools")
-run("sandbox tools offered", "".join(e.get("text", "") for e in ev) == "web_search,remember,forget,memory_search,search_conversations,read_conversation,run_command,read_file,write_file,show_image,browser,subagent")
+run("sandbox tools offered", "".join(e.get("text", "") for e in ev) == "web_search,remember,forget,memory_search,search_conversations,read_conversation,run_command,read_file,write_file,show_image,browser,request_login,subagent")
 ev = chat("run echo hi && exit 2")
 run("run_command output and exit code", "hi" in ev[1]["tool_end"]["output"] and "exit code 2" in ev[1]["tool_end"]["output"])
 os.environ["LARK_SANDBOX_TOKEN"] = "wrong"
 run("bad sandbox token is a tool error, not a crash", chat("run echo hi")[1]["tool_end"]["ok"] is False)
 os.environ["LARK_SANDBOX_TOKEN"] = "tok-1"
-from lark import tools as _tools  # noqa: E402
+from lark import sandbox, tools as _tools  # noqa: E402
 import asyncio  # noqa: E402
 run("write then read file", "Wrote 5 bytes" in asyncio.run(_tools.write_file({"path": "n/a.txt", "content": "hello"}))
     and asyncio.run(_tools.read_file({"path": "n/a.txt"})) == "hello")
@@ -136,6 +136,44 @@ try:
 except _tools.ToolError:
     gone = True
 run("wipe clears files", gone)
+# sign-in take-over: the person types straight into the browser, Lark only waits
+run("input rejects an unknown kind", c.post("/api/browser/input", json={"type": "nope"}).status_code == 422)
+run("input rejects an off-page click", c.post("/api/browser/input", json={"type": "click", "x": 3, "y": 0}).status_code == 422)
+run("input needs an open page", c.post("/api/browser/input", json={"type": "key", "key": "Enter"}).status_code == 502)
+run("no sign-in pending at first", c.get("/api/browser/login").json()["pending"] is None)
+
+
+async def _login_flow():
+    task = asyncio.ensure_future(_tools.request_login({"site": "example.com", "reason": "to see your orders"}))
+    await asyncio.sleep(0.3)
+    pending = _tools.LOGIN["pending"]
+    state = c.get("/api/browser/login").json()["pending"]
+    again = None
+    try:
+        await _tools.request_login({"site": "x"})
+    except _tools.ToolError as e:
+        again = str(e)
+    c.post("/api/browser/login/done")
+    try:
+        out = await task
+    except _tools.ToolError as e:
+        out = "ToolError: " + str(e)
+    return pending, state, again, out
+
+
+pending, state, again, out = asyncio.run(_login_flow())
+run("sign-in request shows the site and reason", state == {"site": "example.com", "reason": "to see your orders"} == pending)
+run("only one sign-in request at a time", again and "already" in again)
+run("pressing Done resumes Lark and clears the request", c.get("/api/browser/login").json()["pending"] is None and ("signing in" in out or "ToolError" in out))
+_tools.LOGIN["last_input"] = __import__("time").time()
+try:
+    asyncio.run(_tools.browser({"action": "snapshot"}))
+    blocked = False
+except _tools.ToolError as e:
+    blocked = "controlling the browser" in str(e)
+_tools.LOGIN["last_input"] = 0.0
+run("Lark's browser waits while you're typing", blocked)
+run("request_login is offered with the browser", True)
 # browser tool against a local page
 import http.server  # noqa: E402
 import functools  # noqa: E402
@@ -163,6 +201,17 @@ try:
 except _tools.ToolError as e:
     bad = "http and https" in str(e)
 run("browser refuses file urls", bad)
+import time as _tm  # noqa: E402
+asyncio.run(_tools.browser({"action": "goto", "url": "http://127.0.0.1:8898/index.html"}))
+# the Find field and Go button; a click lands by position, typing goes to whatever has focus
+_tools.LOGIN["last_input"] = 0.0
+asyncio.run(sandbox.browser_input({"type": "key", "key": "Tab"}))
+asyncio.run(sandbox.browser_input({"type": "key", "key": "Tab"}))
+asyncio.run(sandbox.browser_input({"type": "text", "text": "secret-pw"}))
+snap = asyncio.run(_tools.browser({"action": "snapshot"}))
+run("take-over typing reaches the page", "= 'secret-pw'" in snap)
+asyncio.run(sandbox.browser_input({"type": "scroll", "x": 0.5, "y": 0.5, "dy": 100}))
+run("take-over scroll and click are accepted", True)
 ev = chat("tools")
 run("browser tool in the tool list", "browser" in "".join(e.get("text", "") for e in ev).split(","))
 httpd.shutdown()
@@ -428,6 +477,37 @@ run("approving sends the image to the contact", photos(333) and photos(333)[-1][
 c.put(f"/api/telegram/contacts/{sam}", json={"policy": "auto"})
 c.portal.call(telegram.message_contact, "Sam", "auto image", png)
 run("auto contact gets the image directly", photos(333)[-1]["caption"] == "auto image")
+# editing, deleting and reacting
+call = lambda fn, *args: c.portal.call(fn, *args)
+c.put(f"/api/telegram/contacts/{sam}", json={"policy": "auto"})
+call(telegram.say, 333, "first draft")
+mid = telegram.load()["log"]["333"][-1]["id"]
+sent_n = len(sent)
+call(telegram.edit_message, "Sam", "second draft")
+run("auto contact: edit goes straight through", sent[-1][0] == "editMessageText" and sent[-1][1]["text"] == "second draft" and sent[-1][1]["message_id"] == mid)
+run("recent shows the edit", "second draft" in call(telegram.recent, "Sam") and "(edited)" in call(telegram.recent, "Sam"))
+tg({"message_reaction": {"chat": {"id": 333}, "message_id": mid, "new_reaction": [{"type": "emoji", "emoji": "👍"}]}})
+run("a reaction shows up as the only 'seen' signal", "reacted 👍" in call(telegram.recent, "Sam") and "never tells a bot" in call(telegram.recent, "Sam"))
+call(telegram.react, "Sam", "❤")
+run("react", sent[-1][0] == "setMessageReaction" and sent[-1][1]["reaction"] == [{"type": "emoji", "emoji": "❤"}])
+c.put(f"/api/telegram/contacts/{sam}", json={"policy": "draft"})
+before = len([1 for m_, _ in sent if m_ == "deleteMessage"])
+r = call(telegram.delete_message, "Sam")
+run("draft contact: delete waits for approval", "approve" in r and len([1 for m_, _ in sent if m_ == "deleteMessage"]) == before and "Delete this message" in msgs(111)[-1]["text"])
+did = list(telegram.load()["drafts"])[-1]
+tg({"callback_query": {"id": "q9", "from": {"id": 111}, "data": f"s:{did}", "message": {"message_id": 1}}})
+run("approving deletes it", sent[-1][0] in ("deleteMessage", "editMessageReplyMarkup") and any(m_ == "deleteMessage" and p_["message_id"] == mid for m_, p_ in sent))
+run("deleted message is forgotten", all(e["id"] != mid for e in telegram.load()["log"]["333"]))
+call(telegram.say, 111, "oops")
+call(telegram.delete_message, "")
+run("owner: delete is immediate", sent[-1][0] == "deleteMessage" and sent[-1][1]["chat_id"] == 111)
+try:
+    call(telegram.edit_message, "Nobody", "x")
+    bad = False
+except telegram.TelegramError as e:
+    bad = "No contact" in str(e)
+run("unknown contact is an error", bad)
+c.put(f"/api/telegram/contacts/{sam}", json={"policy": "auto"})
 _real_api = telegram.api
 
 

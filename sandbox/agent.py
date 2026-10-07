@@ -80,6 +80,7 @@ class Browser:
         self.last_used = 0.0
         self.persist = False  # whether this browser keeps its cookies on disk (a Settings switch)
         self.ctx = None
+        self.hold = False  # a person is signing in: don't close the browser for being idle
         self.cursor = None  # where the last click or typing landed, as fractions of the viewport, for the live view
 
     async def _make_lock(self):
@@ -142,7 +143,7 @@ class Browser:
         self.cursor = None
 
     def close_if_idle(self):
-        if self.page and time.time() - self.last_used > IDLE_CLOSE:
+        if self.page and not self.hold and time.time() - self.last_used > IDLE_CLOSE:
             asyncio.run_coroutine_threadsafe(self._close(), self.loop)
 
     async def _snapshot(self) -> str:
@@ -293,6 +294,41 @@ class Browser:
                 msg = str(e).strip().split("\n")[0][:300] or type(e).__name__
                 return {"error": f"Browser error: {msg}"}
 
+    async def _input(self, a: dict) -> dict:
+        """Mouse and keyboard from a person taking over the live view. Positions are fractions of the page."""
+        if not self.page:
+            raise ValueError("No page is open.")
+        page = self.page
+        kind = a.get("type")
+        size = page.viewport_size or {"width": 1280, "height": 800}
+        if kind in ("click", "scroll"):
+            x = min(max(float(a.get("x", 0.5)), 0), 1) * size["width"]
+            y = min(max(float(a.get("y", 0.5)), 0), 1) * size["height"]
+            if kind == "click":
+                await page.mouse.click(x, y)
+                await page.wait_for_timeout(300)
+            else:
+                await page.mouse.move(x, y)
+                await page.mouse.wheel(0, max(-2000, min(2000, float(a.get("dy", 0)))))
+        elif kind == "key":
+            await page.keyboard.press(str(a.get("key", ""))[:30])
+        elif kind == "text":
+            await page.keyboard.insert_text(str(a.get("text", ""))[:2000])
+        else:
+            raise ValueError("Unknown input.")
+        if kind in ("click", "key"):
+            await self._save_state()
+        return {"ok": True}
+
+    def input(self, a: dict) -> dict:
+        self.last_used = time.time()
+        try:
+            return asyncio.run_coroutine_threadsafe(self._input(a), self.loop).result(timeout=15)
+        except ValueError as e:
+            return {"error": str(e)}
+        except Exception as e:
+            return {"error": f"Browser error: {str(e).strip().splitlines()[0][:200] if str(e).strip() else type(e).__name__}"}
+
     async def _clear(self):
         async with self.acting:
             await self._close()
@@ -441,6 +477,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply_bytes(200, data, "image/jpeg")
             if (method, url.path) == ("GET", "/browser/cursor"):
                 return self.reply(200, {"cursor": browser.cursor if browser.page else None})
+            if (method, url.path) == ("POST", "/browser/input"):
+                r = browser.input(self.body())
+                return self.reply(400 if "error" in r else 200, r)
+            if (method, url.path) == ("POST", "/browser/hold"):
+                browser.hold = bool(self.body().get("on"))
+                browser.last_used = time.time()
+                return self.reply(200, {"ok": True})
             if (method, url.path) == ("POST", "/browser/clear"):
                 browser.clear()
                 return self.reply(200, {"ok": True})

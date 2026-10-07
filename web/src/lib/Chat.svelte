@@ -116,7 +116,7 @@
               {/each}
             {/if}
           {/each}
-          {#if live && m.parts?.some((p) => p.type === "tool" && p.name === "browser")}
+          {#if live && m.parts?.some((p) => p.type === "tool" && (p.name === "browser" || p.name === "request_login"))}
             <BrowserWindow url={browserUrl(m.parts)} />
           {/if}
           {#if live && lastPart?.type !== "text"}
