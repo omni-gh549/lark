@@ -11,7 +11,8 @@
   let ripple = $state(0);
   let asked = $state(null); // Lark is waiting for you to sign in: { site, reason }
   let control = $state(false); // you're driving the browser
-  let view, sink;
+  let view, sink, picture;
+  let shot = $state(null); // the picture inside the frame, after object-fit contain letterboxing
   let queue = Promise.resolve();
 
   // Your clicks and keys go straight to the browser and nowhere else: not to the model, the chat or memory.
@@ -19,17 +20,41 @@
   const SPECIAL = { Enter: "Enter", Backspace: "Backspace", Tab: "Tab", Escape: "Escape", Delete: "Delete", Home: "Home", End: "End",
     ArrowUp: "ArrowUp", ArrowDown: "ArrowDown", ArrowLeft: "ArrowLeft", ArrowRight: "ArrowRight", PageUp: "PageUp", PageDown: "PageDown" };
 
+  // The frame is 16:10 and the picture keeps its own shape, so the bars around it are not part of the page.
+  function measure() {
+    const outer = view?.getBoundingClientRect();
+    const nw = picture?.naturalWidth || 0;
+    const nh = picture?.naturalHeight || 0;
+    if (!outer || nw < 2 || nh < 2 || outer.width < 2 || outer.height < 2) {
+      shot = null;
+      return null;
+    }
+    const scale = Math.min(outer.width / nw, outer.height / nh);
+    const width = nw * scale;
+    const height = nh * scale;
+    const next = { left: (outer.width - width) / 2, top: (outer.height - height) / 2, width, height };
+    if (!shot || shot.left !== next.left || shot.top !== next.top || shot.width !== next.width || shot.height !== next.height) shot = next;
+    return { ...next, outer };
+  }
   function at(e) {
-    const r = view.getBoundingClientRect();
-    return { x: Math.min(Math.max((e.clientX - r.left) / r.width, 0), 1), y: Math.min(Math.max((e.clientY - r.top) / r.height, 0), 1) };
+    const r = measure();
+    if (!r) return null;
+    const x = (e.clientX - r.outer.left - r.left) / r.width;
+    const y = (e.clientY - r.outer.top - r.top) / r.height;
+    if (x < -0.01 || y < -0.01 || x > 1.01 || y > 1.01) return null;
+    return { x: Math.min(Math.max(x, 0), 1), y: Math.min(Math.max(y, 0), 1) };
   }
   function onclick(e) {
-    send({ type: "click", ...at(e) });
+    const p = at(e);
+    if (!p) return;
+    send({ type: "click", ...p });
     sink?.focus();
   }
   function onwheel(e) {
     e.preventDefault();
-    send({ type: "scroll", ...at(e), dy: e.deltaY });
+    const p = at(e);
+    if (!p) return;
+    send({ type: "scroll", ...p, dy: e.deltaY });
   }
   function onkeydown(e) {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -67,6 +92,8 @@
   }
 
   onMount(() => {
+    const watch = new ResizeObserver(() => measure());
+    if (view) watch.observe(view);
     let stop = false;
     let seq = 0;
     let n = 0;
@@ -91,6 +118,7 @@
     }
     poll();
     return () => {
+      watch.disconnect();
       stop = true;
       if (control) release();
     };
@@ -114,9 +142,9 @@
     <p class="ask">Lark needs you to sign in{asked.site ? ` to ${asked.site}` : ""}.{asked.reason ? ` ${asked.reason}` : ""}{control ? " Click and type in the window below, then press I'm signed in." : ""}</p>
   {/if}
   <div class="window-view" bind:this={view}>
-    <img {src} alt="" />
-    {#if cursor}
-      <div class="pointer" style="left: {cursor.x * 100}%; top: {cursor.y * 100}%">
+    <img bind:this={picture} {src} alt="" onload={measure} />
+    {#if cursor && shot}
+      <div class="pointer" style="left: {shot.left + cursor.x * shot.width}px; top: {shot.top + cursor.y * shot.height}px">
         {#key ripple}{#if ripple}<span class="ripple"></span>{/if}{/key}
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M5 3l14 7.5-6 1.8-2.4 6.2z" /></svg>
       </div>
