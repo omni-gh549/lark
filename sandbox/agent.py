@@ -133,9 +133,12 @@ class Browser:
         from playwright.async_api import async_playwright
         self.pw = await async_playwright().start()
         proxy = os.environ.get("SANDBOX_PROXY")  # optional, e.g. a residential proxy for sites that block data-centre addresses
-        self.browser = await self.pw.chromium.launch(executable_path=CHROME, headless=True, proxy=_proxy(proxy), args=[
+        args = [
             "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--mute-audio", "--disable-extensions",
-            "--disable-background-networking", "--disable-blink-features=AutomationControlled", "--js-flags=--max-old-space-size=384"])
+            "--disable-background-networking", "--disable-blink-features=AutomationControlled", "--js-flags=--max-old-space-size=384"]
+        if proxy:
+            args.append("--disable-quic")  # QUIC is UDP and would skip the proxy, leaking the server address
+        self.browser = await self.pw.chromium.launch(executable_path=CHROME, headless=True, proxy=_proxy(proxy), args=args)
         # Headless Chromium announces itself ("HeadlessChrome", navigator.webdriver, software WebGL), which makes many sites
         # refuse to run their scripts, so present as an ordinary desktop Chrome, consistently: the user agent, the
         # client hints and the page's own view of itself must all agree or bot checks notice.

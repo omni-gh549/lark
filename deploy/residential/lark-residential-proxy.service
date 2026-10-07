@@ -1,0 +1,14 @@
+[Unit]
+Description=Selective home egress for Lark browser sites
+After=docker.service network-online.target lark-sandbox-firewall.service
+Wants=docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/sbin/lark-residential-proxy.py
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

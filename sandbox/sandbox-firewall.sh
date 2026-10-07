@@ -7,27 +7,40 @@ set -euo pipefail
 
 SUBNET=${SANDBOX_SUBNET:-172.30.0.0/24}
 CHAIN=LARK-SANDBOX
+ENV_FILE=${LARK_ENV_FILE:-/etc/lark/lark.env}
+PROXY_PORT=$(grep -s '^SANDBOX_PROXY_PORT=' "$ENV_FILE" | cut -d= -f2- || true)
+PROXY_PORT=${PROXY_PORT:-8898}
+[[ "$PROXY_PORT" =~ ^[0-9]+$ ]] || PROXY_PORT=8898
+
+allow_host_proxy() {
+  # Lark's selector proxy listens on this port on the docker bridge. It must stay
+  # above the DROP below: apply() can run again after a reboot or a sandbox rebuild.
+  while iptables -w 5 -D INPUT -s "$SUBNET" -p tcp --dport "$PROXY_PORT" -j ACCEPT 2>/dev/null; do :; done
+  iptables -w 5 -I INPUT 1 -s "$SUBNET" -p tcp --dport "$PROXY_PORT" -j ACCEPT
+}
 
 apply() {
-  iptables -N $CHAIN 2>/dev/null || iptables -F $CHAIN
+  iptables -w 5 -N $CHAIN 2>/dev/null || iptables -w 5 -F $CHAIN
   # Reply traffic for connections the sandbox opened is handled by Docker's own rules; we only restrict new ones.
-  iptables -A $CHAIN -d 10.0.0.0/8 -j DROP
-  iptables -A $CHAIN -d 172.16.0.0/12 -j DROP
-  iptables -A $CHAIN -d 192.168.0.0/16 -j DROP
-  iptables -A $CHAIN -d 169.254.0.0/16 -j DROP   # cloud metadata
-  iptables -A $CHAIN -d 100.64.0.0/10 -j DROP
-  iptables -A $CHAIN -j RETURN
+  iptables -w 5 -A $CHAIN -d 10.0.0.0/8 -j DROP
+  iptables -w 5 -A $CHAIN -d 172.16.0.0/12 -j DROP
+  iptables -w 5 -A $CHAIN -d 192.168.0.0/16 -j DROP
+  iptables -w 5 -A $CHAIN -d 169.254.0.0/16 -j DROP   # cloud metadata
+  iptables -w 5 -A $CHAIN -d 100.64.0.0/10 -j DROP
+  iptables -w 5 -A $CHAIN -j RETURN
   # Forwarded traffic from the sandbox (to the internet or other containers)
-  iptables -C DOCKER-USER -s "$SUBNET" -j $CHAIN 2>/dev/null || iptables -I DOCKER-USER -s "$SUBNET" -j $CHAIN
+  iptables -w 5 -C DOCKER-USER -s "$SUBNET" -j $CHAIN 2>/dev/null || iptables -w 5 -I DOCKER-USER -s "$SUBNET" -j $CHAIN
   # Traffic from the sandbox to the host itself (its own ports, sshd, databases, Lark)
-  iptables -C INPUT -s "$SUBNET" -m conntrack --ctstate NEW -j DROP 2>/dev/null || iptables -I INPUT -s "$SUBNET" -m conntrack --ctstate NEW -j DROP
+  iptables -w 5 -C INPUT -s "$SUBNET" -m conntrack --ctstate NEW -j DROP 2>/dev/null || iptables -w 5 -I INPUT -s "$SUBNET" -m conntrack --ctstate NEW -j DROP
+  allow_host_proxy
 }
 
 remove() {
-  iptables -D DOCKER-USER -s "$SUBNET" -j $CHAIN 2>/dev/null || true
-  iptables -D INPUT -s "$SUBNET" -m conntrack --ctstate NEW -j DROP 2>/dev/null || true
-  iptables -F $CHAIN 2>/dev/null || true
-  iptables -X $CHAIN 2>/dev/null || true
+  while iptables -w 5 -D INPUT -s "$SUBNET" -p tcp --dport "$PROXY_PORT" -j ACCEPT 2>/dev/null; do :; done
+  iptables -w 5 -D DOCKER-USER -s "$SUBNET" -j $CHAIN 2>/dev/null || true
+  iptables -w 5 -D INPUT -s "$SUBNET" -m conntrack --ctstate NEW -j DROP 2>/dev/null || true
+  iptables -w 5 -F $CHAIN 2>/dev/null || true
+  iptables -w 5 -X $CHAIN 2>/dev/null || true
 }
 
 case "${1:-}" in

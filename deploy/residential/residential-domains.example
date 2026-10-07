@@ -1,0 +1,6 @@
+# Sites whose browser traffic leaves through the home connection.
+# One domain suffix per line. Subdomains are included. The next request picks this up.
+tesco.com
+tesco.ie
+tescomobile.com
+asda.com

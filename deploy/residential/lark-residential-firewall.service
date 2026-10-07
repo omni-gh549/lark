@@ -1,0 +1,12 @@
+[Unit]
+Description=Keep the Lark sandbox's path to the residential proxy open
+After=docker.service lark-sandbox-firewall.service
+Wants=lark-sandbox-firewall.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash -c 'iptables -w 5 -C INPUT -s 172.30.0.0/24 -p tcp --dport 8898 -j ACCEPT || iptables -w 5 -I INPUT 1 -s 172.30.0.0/24 -p tcp --dport 8898 -j ACCEPT'
+
+[Install]
+WantedBy=multi-user.target
