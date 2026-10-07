@@ -14,6 +14,7 @@ DEFAULTS = {
     "provider": "openrouter",
     "models": {"openrouter": "deepseek/deepseek-v4.1-flash", "gateway": ""},
     "search": "brave",
+    "browser_cookies": False,  # keep the sandbox browser's cookies and logins between sessions
     "keys": {},
 }
 
@@ -46,6 +47,7 @@ def load() -> dict:
         "provider": data.get("provider", DEFAULTS["provider"]),
         "models": {**DEFAULTS["models"], **data.get("models", {})},
         "search": data.get("search", DEFAULTS["search"]),
+        "browser_cookies": bool(data.get("browser_cookies", False)),
         "keys": data.get("keys", {}),
     }
 
@@ -59,8 +61,10 @@ def _save(data: dict):
     os.replace(tmp, SETTINGS)
 
 
-def update(provider=None, models=None, search=None):
+def update(provider=None, models=None, search=None, browser_cookies=None):
     data = load()
+    if browser_cookies is not None:
+        data["browser_cookies"] = bool(browser_cookies)
     if provider:
         data["provider"] = provider
     if search:

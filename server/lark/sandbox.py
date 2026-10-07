@@ -3,6 +3,8 @@ import os
 
 import httpx
 
+from . import vault
+
 
 class SandboxError(RuntimeError):
     pass
@@ -49,7 +51,12 @@ async def write(path: str, content: str) -> dict:
 async def browse(args: dict) -> dict:
     """Returns {"snapshot": str, "image": base64 jpeg (screenshot action only)}."""
     keep = {k: args[k] for k in ("action", "url", "id", "x", "y", "text", "submit", "key", "keys", "direction") if k in args}
+    keep["persist"] = vault.load()["browser_cookies"]
     return await _call("POST", "/browser", json=keep, timeout=100)
+
+
+async def clear_browser() -> None:
+    await _call("POST", "/browser/clear", timeout=40)
 
 
 async def frame() -> bytes | None:

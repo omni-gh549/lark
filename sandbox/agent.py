@@ -29,6 +29,7 @@ running: set = set()  # commands in flight, so Stop can kill them
 
 
 CHROME = os.environ.get("SANDBOX_CHROMIUM", "/usr/bin/chromium")
+STATE_FILE = os.path.join(os.environ.get("SANDBOX_HOME", "/home/lark"), ".browser-state.json")  # cookies and local storage
 IDLE_CLOSE = 300  # seconds; the browser is the memory hog, so it shuts down when unused
 
 SNAPSHOT_JS = """() => {
@@ -77,6 +78,8 @@ class Browser:
         self.acting = asyncio.run_coroutine_threadsafe(self._make_lock(), self.loop).result()
         self.pw = self.browser = self.page = None
         self.last_used = 0.0
+        self.persist = False  # whether this browser keeps its cookies on disk (a Settings switch)
+        self.ctx = None
         self.cursor = None  # where the last click or typing landed, as fractions of the viewport, for the live view
 
     async def _make_lock(self):
@@ -102,8 +105,9 @@ class Browser:
             "--disable-background-networking", "--disable-blink-features=AutomationControlled", "--js-flags=--max-old-space-size=384"])
         # Headless Chromium announces itself ("HeadlessChrome", navigator.webdriver), which makes many sites
         # refuse to run their scripts, so present as an ordinary desktop Chrome.
-        ctx = await self.browser.new_context(
-            viewport={"width": 1280, "height": 800}, locale="en-GB",
+        saved = STATE_FILE if self.persist and os.path.exists(STATE_FILE) else None
+        ctx = self.ctx = await self.browser.new_context(
+            storage_state=saved, viewport={"width": 1280, "height": 800}, locale="en-GB",
             user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
         await ctx.add_init_script("Object.defineProperty(navigator, 'webdriver', { get: () => undefined });")
 
@@ -117,7 +121,17 @@ class Browser:
         self.page = await ctx.new_page()
         self.page.set_default_timeout(10000)
 
+    async def _save_state(self):
+        if self.persist and self.ctx:
+            try:
+                await self.ctx.storage_state(path=STATE_FILE)
+                os.chmod(STATE_FILE, 0o600)
+            except Exception:
+                pass
+
     async def _close(self):
+        await self._save_state()
+        self.ctx = None
         for obj, fn in ((self.browser, "close"), (self.pw, "stop")):
             try:
                 if obj:
@@ -266,10 +280,27 @@ class Browser:
     async def _do(self, a: dict) -> dict:
         async with self.acting:  # one action at a time
             try:
-                return await self._act(a)
+                persist = bool(a.get("persist"))
+                if persist != self.persist:
+                    await self._close()  # the switch changed: start a fresh browser in the new mode
+                    self.persist = persist
+                    if not persist and os.path.exists(STATE_FILE):
+                        os.unlink(STATE_FILE)  # turning it off forgets what was saved
+                out = await self._act(a)
+                await self._save_state()
+                return out
             except Exception as e:  # playwright errors are long; keep the first line
                 msg = str(e).strip().split("\n")[0][:300] or type(e).__name__
                 return {"error": f"Browser error: {msg}"}
+
+    async def _clear(self):
+        async with self.acting:
+            await self._close()
+            if os.path.exists(STATE_FILE):
+                os.unlink(STATE_FILE)
+
+    def clear(self):
+        asyncio.run_coroutine_threadsafe(self._clear(), self.loop).result(timeout=30)
 
     def do(self, a: dict) -> dict:
         self.last_used = time.time()
@@ -410,6 +441,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply_bytes(200, data, "image/jpeg")
             if (method, url.path) == ("GET", "/browser/cursor"):
                 return self.reply(200, {"cursor": browser.cursor if browser.page else None})
+            if (method, url.path) == ("POST", "/browser/clear"):
+                browser.clear()
+                return self.reply(200, {"ok": True})
             if (method, url.path) == ("POST", "/browser"):
                 if not browser.available():
                     return self.reply(501, {"error": "This sandbox has no browser. Rebuild it with sandbox.sh up."})

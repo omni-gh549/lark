@@ -71,6 +71,7 @@ def view_settings() -> dict:
         "provider": s["provider"],
         "models": s["models"],
         "search": s["search"],
+        "browser_cookies": s["browser_cookies"],
         "auth": bool(auth.password()),
         "sandbox": sandbox.configured(),
         "providers": {
@@ -93,6 +94,7 @@ class SettingsIn(BaseModel):
     provider: str | None = None
     models: dict[str, str] | None = None
     search: str | None = None
+    browser_cookies: bool | None = None
 
 
 @app.put("/api/settings")
@@ -103,7 +105,7 @@ async def put_settings(body: SettingsIn):
         return err(400, "Unknown provider.")
     if body.search and body.search not in search.SEARCH_PROVIDERS:
         return err(400, "Unknown search provider.")
-    vault.update(body.provider, {k: v.strip() for k, v in (body.models or {}).items()}, body.search)
+    vault.update(body.provider, {k: v.strip() for k, v in (body.models or {}).items()}, body.search, body.browser_cookies)
     return view_settings()
 
 
@@ -379,6 +381,17 @@ async def browser_cursor():
     if not sandbox.configured():
         return err(404, "No sandbox.")
     return {"cursor": await sandbox.cursor()}
+
+
+@app.post("/api/browser/clear")
+async def browser_clear():
+    if not sandbox.configured():
+        return err(400, "No sandbox is set up.")
+    try:
+        await sandbox.clear_browser()
+    except sandbox.SandboxError as e:
+        return err(502, str(e))
+    return {"ok": True}
 
 
 @app.post("/api/sandbox/reset")

@@ -56,6 +56,26 @@
     app.settings = await api("/api/settings", { method: "PUT", body: { search } });
   }
 
+  let browserNote = $state({ text: "", kind: "" });
+
+  async function setCookies(on) {
+    try {
+      app.settings = await api("/api/settings", { method: "PUT", body: { browser_cookies: on } });
+      browserNote = { text: on ? "Cookies and logins will be kept." : "Saved cookies deleted.", kind: "good" };
+    } catch (e) {
+      browserNote = { text: e.message, kind: "bad" };
+    }
+  }
+
+  async function clearBrowser() {
+    try {
+      await api("/api/browser/clear", { method: "POST" });
+      browserNote = { text: "Browser data cleared.", kind: "good" };
+    } catch (e) {
+      browserNote = { text: e.message, kind: "bad" };
+    }
+  }
+
   let sandbox = $state(null); // { configured, ok, home, disk_free_mb, error }
   let sandboxNote = $state({ text: "", kind: "" });
   let confirmWipe = $state(false);
@@ -246,6 +266,24 @@
             <p class="status {sandboxNote.kind}">{sandboxNote.text}</p>
           {/if}
         </div>
+        {#if s.sandbox}
+          <div class="row">
+            <div class="row-head">
+              <span class="row-title">Keep browser cookies and logins</span>
+              <div class="seg" role="group" aria-label="Keep browser cookies">
+                <button aria-pressed={!s.browser_cookies} onclick={() => setCookies(false)}>Off</button>
+                <button aria-pressed={s.browser_cookies} onclick={() => setCookies(true)}>On</button>
+              </div>
+            </div>
+            <p class="meta" style="margin:0">
+              Saved logins sit in the sandbox, where Lark's commands can read them, and a malicious web page could try to misuse them. Best for low-stakes sites.
+            </p>
+            <div class="row-actions">
+              <button class="btn" onclick={clearBrowser}>Clear browser data</button>
+            </div>
+            <p class="status {browserNote.kind}">{browserNote.text}</p>
+          </div>
+        {/if}
       </div>
     </div>
 
