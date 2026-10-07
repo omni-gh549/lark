@@ -28,6 +28,8 @@ SWAP=$(cfg SANDBOX_SWAP "$MEM")   # total memory + swap; equal to MEM means no s
 CPUS=$(cfg SANDBOX_CPUS 1)
 PIDS=$(cfg SANDBOX_PIDS 256)
 PROXY=$(cfg SANDBOX_PROXY "")   # optional proxy for the browser only
+CDP=$(cfg SANDBOX_BROWSER_CDP "")   # optional home browser, reached over the docker bridge
+INPUT=$(cfg SANDBOX_BROWSER_INPUT "")   # that browser's real mouse and keyboard
 
 token() {
   local t
@@ -53,7 +55,7 @@ create() {
     --shm-size 256m --memory "$MEM" --memory-swap "$SWAP" --cpus "$CPUS" --pids-limit "$PIDS" \
     --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add SETUID --cap-add SETGID --cap-add KILL \
     --security-opt no-new-privileges \
-    -e SANDBOX_TOKEN="$tok" -e SANDBOX_PROXY="$PROXY" -v "$VOL":/home/lark "$IMG" >/dev/null
+    -e SANDBOX_TOKEN="$tok" -e SANDBOX_PROXY="$PROXY" -e SANDBOX_BROWSER_CDP="$CDP" -e SANDBOX_BROWSER_INPUT="$INPUT" -v "$VOL":/home/lark "$IMG" >/dev/null
 }
 
 data_dir() {
