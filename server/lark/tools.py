@@ -290,8 +290,14 @@ MEMORY_TOOLS = [
 
 async def message_contact(args: dict):
     from . import telegram
+    image = ""
+    if _str(args, "image"):
+        try:
+            image = files.save(await sandbox.read_binary(_str(args, "image")))
+        except (sandbox.SandboxError, files.FileError) as e:
+            raise ToolError(str(e))
     try:
-        return await telegram.message_contact(_str(args, "contact"), _str(args, "text"))
+        return await telegram.message_contact(_str(args, "contact"), _str(args, "text"), image)
     except telegram.TelegramError as e:
         raise ToolError(str(e))
 
@@ -300,7 +306,7 @@ MESSAGE_CONTACT = Tool(
     "message_contact", "Message contact",
     "Send a Telegram message to one of the owner's contacts, from Lark's own Telegram account. Use it only when the owner asks. "
     "The owner approves the message on Telegram first unless that contact is set to auto, so it may not be delivered yet.",
-    _obj({"contact": {"type": "string"}, "text": {"type": "string"}}, ["contact", "text"]),
+    _obj({"contact": {"type": "string"}, "text": {"type": "string"}, "image": {"type": "string", "description": "optional image file path in the sandbox to send along"}}, ["contact", "text"]),
     message_contact, lambda a: f"{a.get('contact', '')}: {str(a.get('text', ''))[:80]}")
 
 

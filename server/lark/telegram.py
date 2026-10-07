@@ -118,10 +118,19 @@ async def say(chat_id: int, text: str, **extra):
     return last
 
 
-async def send_photo(chat_id: int, name: str):
+async def send_photo(chat_id: int, name: str, caption: str = "", **extra):
+    """Sends an image; falls back to sending it as a file when Telegram won't take it as a photo (odd size, too big)."""
     p = files.path(name)
-    if p:
-        await api("sendPhoto", files_={"photo": (name, p.read_bytes())}, chat_id=str(chat_id), _timeout=60)
+    if not p:
+        return
+    params = {"chat_id": str(chat_id), **({"caption": caption[:1000]} if caption else {})}
+    if "reply_markup" in extra:
+        params["reply_markup"] = json.dumps(extra["reply_markup"])
+    data = p.read_bytes()
+    try:
+        await api("sendPhoto", files_={"photo": (name, data)}, _timeout=60, **params)
+    except TelegramError:
+        await api("sendDocument", files_={"document": (name, data)}, _timeout=60, **params)
 
 
 _me: dict = {}
@@ -315,7 +324,7 @@ async def _from_owner(chat_id: int, text: str, photo):
     for part in (last or {}).get("parts", []):
         for name in part.get("images", []) if part.get("type") == "tool" else []:
             try:
-                await send_photo(chat_id, name)
+                await send_photo(chat_id, name, part.get("caption", ""))
             except TelegramError:
                 pass
 
@@ -390,25 +399,40 @@ async def _from_contact(st: dict, cid: str, contact: dict, text: str):
     await _draft(cid, reply, f"{contact['name']} wrote: {text}")
 
 
-async def _deliver(cid: str, text: str):
-    await say(int(cid), text)
+async def _deliver(cid: str, text: str, image: str = ""):
+    if image:
+        if len(text) <= 1000:
+            await send_photo(int(cid), image, text)
+        else:
+            await send_photo(int(cid), image)
+            await say(int(cid), text)
+    else:
+        await say(int(cid), text)
     chat = contact_chat_id(cid)
     doc = chats.load(chat) or {"messages": []}
-    chats.save(chat, doc["messages"][-40:] + [{"role": "assistant", "content": text}])
+    note = text + (" [sent an image]" if image else "")
+    chats.save(chat, doc["messages"][-40:] + [{"role": "assistant", "content": note}])
 
 
-async def _draft(cid: str, text: str, context: str = ""):
+async def _draft(cid: str, text: str, context: str = "", image: str = ""):
     """Parks a message for the owner to approve with a button."""
     st = load()
     if not st["owner"]:
         raise TelegramError("Link your Telegram account in Settings first, so I can ask you to approve messages.")
     did = secrets.token_hex(6)
-    st["drafts"][did] = {"to": cid, "text": text, "created": time.time()}
+    st["drafts"][did] = {"to": cid, "text": text, "created": time.time(), **({"image": image} if image else {})}
     save(st)
     name = st["contacts"][cid]["name"]
     head = f"{context}\n\n" if context else ""
-    await say(st["owner"]["id"], f"{head}Reply to {name}:\n{text}", reply_markup={"inline_keyboard": [[
-        {"text": "Send", "callback_data": f"s:{did}"}, {"text": "Dismiss", "callback_data": f"d:{did}"}]]})
+    buttons = {"reply_markup": {"inline_keyboard": [[
+        {"text": "Send", "callback_data": f"s:{did}"}, {"text": "Dismiss", "callback_data": f"d:{did}"}]]}}
+    body = f"{head}Reply to {name} (with the image shown):\n{text}" if image else f"{head}Reply to {name}:\n{text}"
+    if image and len(body) <= 1000:
+        await send_photo(st["owner"]["id"], image, body, **buttons)
+    else:
+        if image:
+            await send_photo(st["owner"]["id"], image)
+        await say(st["owner"]["id"], body, **buttons)
 
 
 async def _on_button(q: dict):
@@ -423,7 +447,7 @@ async def _on_button(q: dict):
     if not draft:
         await api("answerCallbackQuery", callback_query_id=q["id"], text="That one is already handled.")
     elif action == "s" and draft["to"] in st["contacts"] and st["contacts"][draft["to"]]["policy"] != "blocked":
-        await _deliver(draft["to"], draft["text"])
+        await _deliver(draft["to"], draft["text"], draft.get("image", ""))
         await api("answerCallbackQuery", callback_query_id=q["id"], text="Sent.")
     else:
         await api("answerCallbackQuery", callback_query_id=q["id"], text="Dismissed.")
@@ -434,7 +458,7 @@ async def _on_button(q: dict):
             pass
 
 
-async def message_contact(name: str, text: str) -> str:
+async def message_contact(name: str, text: str, image: str = "") -> str:
     """For the agent's tool: send a message to a contact, asking the owner first unless the contact is on auto."""
     st = load()
     if not st["owner"]:
@@ -446,9 +470,9 @@ async def message_contact(name: str, text: str) -> str:
     if c["policy"] == "blocked":
         raise TelegramError(f"{c['name']} is blocked.")
     if c["policy"] == "auto":
-        await _deliver(cid, text)
+        await _deliver(cid, text, image)
         return f"Sent to {c['name']}."
-    await _draft(cid, text, "Lark wants to send a message.")
+    await _draft(cid, text, "Lark wants to send a message.", image)
     return f"Asked the owner on Telegram to approve this message to {c['name']}. It goes out when they tap Send."
 
 

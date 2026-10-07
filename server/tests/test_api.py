@@ -412,6 +412,33 @@ run("agent message waits for approval", "approve" in r and "Running late" in msg
 c.put(f"/api/telegram/contacts/{sam}", json={"policy": "auto"})
 r = c.portal.call(telegram.message_contact, "Sam", "On my way")
 run("auto contact gets agent messages directly", msgs(333)[-1]["text"] == "On my way")
+from lark import files as _files  # noqa: E402
+png = _files.save(b"\x89PNG\r\n\x1a\n" + b"0" * 64)
+c.put(f"/api/telegram/contacts/{sam}", json={"policy": "draft"})
+photos = lambda chat_id: [p for m, p in sent if m == "sendPhoto" and p["chat_id"] == str(chat_id)]
+r = c.portal.call(telegram.message_contact, "Sam", "Here is the photo", png)
+run("image to a draft contact is previewed to the owner with buttons",
+    "approve" in r and photos(111) and "Here is the photo" in photos(111)[-1]["caption"] and "inline_keyboard" in photos(111)[-1]["reply_markup"])
+run("not sent to the contact before approval", not photos(333))
+did = list(telegram.load()["drafts"])[-1]
+tg({"callback_query": {"id": "q1", "from": {"id": 111}, "data": f"s:{did}", "message": {"message_id": 1}}})
+run("approving sends the image to the contact", photos(333) and photos(333)[-1]["caption"] == "Here is the photo")
+c.put(f"/api/telegram/contacts/{sam}", json={"policy": "auto"})
+c.portal.call(telegram.message_contact, "Sam", "auto image", png)
+run("auto contact gets the image directly", photos(333)[-1]["caption"] == "auto image")
+_real_api = telegram.api
+
+
+async def no_photo(method, token=None, files_=None, _timeout=20, **params):
+    if method == "sendPhoto":
+        raise telegram.TelegramError("PHOTO_INVALID_DIMENSIONS")
+    return await _real_api(method, token, files_, _timeout, **params)
+
+
+telegram.api = no_photo
+c.portal.call(telegram.send_photo, 111, png, "cap")
+telegram.api = _real_api
+run("falls back to a file when Telegram refuses the photo", sent[-1][0] == "sendDocument" and sent[-1][1]["caption"] == "cap")
 from lark import agent as _agent  # noqa: E402
 seen = []
 _loop = _agent.loop
