@@ -483,6 +483,8 @@ run("owner's agent can message contacts", "message_contact" in msgs(111)[-1]["te
 r = c.portal.call(telegram.message_contact, "sam", "Running late")
 run("agent message to a draft contact still sends immediately", r.startswith("Sent") and msgs(333)[-1]["text"] == "Running late")
 c.put(f"/api/telegram/contacts/{sam}", json={"policy": "auto"})
+r = c.portal.call(_tools.MESSAGE_CONTACT.run, {"contact": "Sam", "text": "no image given"})
+run("the message_contact tool works without an image", r.startswith("Sent") and msgs(333)[-1]["text"] == "no image given")
 r = c.portal.call(telegram.message_contact, "Sam", "On my way")
 run("auto contact gets agent messages directly", msgs(333)[-1]["text"] == "On my way")
 run("replies split into several messages and lose markdown", telegram._pieces("**Hi** there\n---\nsecond one\n\n---\n# Third") == ["Hi there", "second one", "Third"])

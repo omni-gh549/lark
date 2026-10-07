@@ -352,9 +352,10 @@ MEMORY_TOOLS = [
 async def message_contact(args: dict):
     from . import telegram
     image = ""
-    if _str(args, "image"):
+    path = args.get("image")
+    if isinstance(path, str) and path.strip():
         try:
-            image = files.save(await sandbox.read_binary(_str(args, "image")))
+            image = files.save(await sandbox.read_binary(path))
         except (sandbox.SandboxError, files.FileError) as e:
             raise ToolError(str(e))
     try:
