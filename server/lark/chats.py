@@ -48,6 +48,11 @@ def save(chat_id: str, messages: list[dict], error: str | None = None) -> dict:
         f.write(data)
     os.chmod(tmp, 0o600)
     os.replace(tmp, path)
+    try:
+        from . import memory  # late: memory reads chats
+        memory.index_chat(chat_id, doc)
+    except Exception:
+        pass  # search is a convenience; saving the chat must not depend on it
     return {k: doc[k] for k in ("id", "title", "created", "updated")}
 
 
@@ -63,6 +68,11 @@ def delete(chat_id: str) -> None:
     try:
         (_dir() / f"{chat_id}.json").unlink()
     except OSError:
+        pass
+    try:
+        from . import memory
+        memory.drop_chat(chat_id)
+    except Exception:
         pass
 
 

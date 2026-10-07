@@ -26,6 +26,16 @@ async def key(request: Request):
     return {"data": {"label": "test"}}
 
 
+@app.post("/embeddings")
+async def embeddings(request: Request):
+    if not authed(request):
+        return JSONResponse({"error": {"message": "Invalid API key"}}, status_code=401)
+    body = await request.json()
+    groups = (("cat", "feline", "kitten"), ("sister", "sibling"))
+    return {"data": [{"index": i, "embedding": [float(any(w in t.lower() for w in g)) for g in groups] + [0.1]}
+                     for i, t in enumerate(body["input"])]}
+
+
 @app.post("/chat/completions")
 async def chat(request: Request):
     if not authed(request):
@@ -48,6 +58,27 @@ async def chat(request: Request):
         names = [t["function"]["name"] for t in body.get("tools", [])]
         if "subagent working for Lark" in body["messages"][0]["content"] and last_msg["role"] == "user":
             yield "data: " + json.dumps({"choices": [{"delta": {"content": "Sub result: " + last}}]}) + "\n\n"
+            yield "data: [DONE]\n\n"
+            return
+        system = body["messages"][0]["content"]
+        if "maintain long-term memory" in system:  # the background learner
+            payload = json.loads(last)
+            said = payload["latest_exchange"]["user"]
+            ops = [{"op": "add", "text": "The user's cat is called Miso.", "kind": "person", "subject": "Miso", "importance": 4}] if "cat" in said else []
+            for f in payload["related_memories"]:
+                if "moved" in said and "Lisbon" in f["text"]:
+                    ops.append({"op": "update", "id": f["id"], "text": "The user's sister Maya now lives in Porto."})
+            out = json.dumps({"summary": "Talked about: " + said[:50], "ops": ops})
+            yield "data: " + json.dumps({"choices": [{"delta": {"content": out}}]}) + "\n\n"
+            yield "data: [DONE]\n\n"
+            return
+        if last.endswith("sysdump"):
+            yield "data: " + json.dumps({"choices": [{"delta": {"content": system}}]}) + "\n\n"
+            yield "data: [DONE]\n\n"
+            return
+        if last.startswith("remember ") and "remember" in names and last_msg["role"] == "user":
+            for c in call("remember", {"text": last[9:]}):
+                yield c
             yield "data: [DONE]\n\n"
             return
         if last.startswith("delegate ") and "subagent" in names and last_msg["role"] == "user":

@@ -4,7 +4,7 @@
 
 An open source, self-hosted personal assistant. Chat with a model of your choice, through OpenRouter or Vercel AI Gateway. It can search the web, run commands in a private sandbox, and hand work to subagents.
 
-> **Heads up:** Lark is an early, initial implementation. It may be buggy and is not feature complete. Expect rough edges, and review what it can do (commands, browsing, files) before trusting it with anything important. Persistent memory and Telegram are next.
+> **Heads up:** Lark is an early, initial implementation. It may be buggy and is not feature complete. Expect rough edges, and review what it can do (commands, browsing, files) before trusting it with anything important. 
 
 ## Run it
 
@@ -63,6 +63,8 @@ systemctl restart lark
 **Browser.** If the sandbox image includes Chromium (it does when built with `sandbox.sh up`), Lark can also drive a real browser: open pages, read them, click and type by element number. The browser shuts itself down after 5 idle minutes, since it is the biggest memory user (budget 300 to 500 MB).
 
 By default the browser forgets cookies and logins when it closes. Settings has a switch to keep them (saved in the sandbox's home folder), and a button to clear them. Anything saved there can be read by Lark's commands and misused by a hostile web page, so use it for low-stakes sites.
+
+**Memory.** Lark remembers across chats. Short notes (facts, preferences, people, projects, plans, events) live in a local SQLite database (`data/memory.db`) and every conversation is indexed for full-text search. Each turn, Lark gets your pinned and important notes, the notes relevant to what you just said, recent chat summaries and matching excerpts from older chats. It also has tools to `remember`, `forget`, `memory_search`, `search_conversations` and `read_conversation`. After each reply a background pass adds or corrects notes (one extra model call per reply; switch it off in Memory). The Memory page (account menu) lets you search, edit, pin, delete and add notes, search all conversations, or forget everything. Optionally set an embedding model there to match notes by meaning as well as words. Telegram contact chats are searchable only by you on request and never feed notes or the prompt.
 
 **Telegram.** Lark can have its own Telegram presence through a bot. Create one with [@BotFather](https://t.me/BotFather), paste its token into Settings, then press "Link my Telegram" and tap Start in Telegram. After that you can chat with Lark there (including photos, `/new` to start over, `/stop` to cancel), and it sends back screenshots it takes. To let Lark talk to other people, create an invite link per person in Settings and give them a policy: *Ask me first* (Lark drafts a reply and you approve it with a button), *Reply on its own* (within a scope you write, and it tells you), *Just forward*, or *Blocked*. Invite links work once. A bot can't message people who haven't started it, which is why invites exist. Lark introduces itself as an AI assistant. What contacts write goes to a model with no tools and no access to your data, and is rate limited, so it can't act on your behalf. Lark can also message a contact when you ask (the `message_contact` tool), and you approve that on Telegram too unless the contact is on auto. It uses long polling, so it needs no open port. Telegram bots are not end-to-end encrypted.
 

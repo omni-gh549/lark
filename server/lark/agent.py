@@ -38,6 +38,10 @@ def system_prompt(available: list[tools.Tool], sub: bool = False) -> str:
                      "those only see the page's no-JavaScript fallback. "
                      "Don't start a second browser in the sandbox (Playwright, Chromium and the like): memory is limited and it can crash "
                      "the sandbox. To read the game board or page state, use the browser tool's snapshot.")
+    if "remember" in names:
+        lines.append("You have a long-term memory shared across all chats. Notes from it come with each conversation. Save things worth keeping "
+                     "with remember (people, preferences, projects, plans, corrections) even if the background learner would catch them, "
+                     "use memory_search for facts and search_conversations / read_conversation to look back at what was said, and use forget for wrong or outdated notes.")
     if "message_contact" in names:
         lines.append("You can message the owner's Telegram contacts with message_contact, only when asked to. Unless a contact is on auto, "
                      "the owner approves each message first on Telegram, so say that it's waiting for their approval, not that it was sent.")
@@ -62,19 +66,19 @@ async def _subagent(name: str, key: str, model: str, task: str, steps: list[str]
     return answer.strip() or "The subagent returned nothing."
 
 
-async def run(name: str, key: str, model: str, history: list[dict]):
-    """Yields UI events: text, tool_start, tool_end, error, done."""
+async def run(name: str, key: str, model: str, history: list[dict], memory: str = ""):
+    """Yields UI events: text, tool_start, tool_end, error, done. `memory` is the notes block for the system prompt."""
     available = await tools.available()
     if available:
         available = available + [SUBAGENT]
-    async for ev in loop(name, key, model, history, available, MAX_ROUNDS):
+    async for ev in loop(name, key, model, history, available, MAX_ROUNDS, extra=memory):
         yield ev
 
 
-async def loop(name, key, model, history, available, max_rounds, sub=False, system=None):
+async def loop(name, key, model, history, available, max_rounds, sub=False, system=None, extra=""):
     by_name = {t.name: t for t in available}
     specs = [t.spec() for t in available] or None
-    messages = [{"role": "system", "content": system or system_prompt(available, sub)}] + history
+    messages = [{"role": "system", "content": (system or system_prompt(available, sub)) + (f"\n\n{extra}" if extra else "")}] + history
     gate = asyncio.Semaphore(MAX_PARALLEL)
 
     rounds = 0

@@ -7,7 +7,7 @@ assistant message is written into the saved chat.
 import asyncio
 import json
 
-from . import agent, chats, sandbox
+from . import agent, chats, memory, sandbox
 
 _runs: dict[str, "Run"] = {}
 
@@ -91,8 +91,13 @@ def assistant_message(events: list[dict]) -> dict | None:
 
 async def _execute(run: Run, name: str, key: str, model: str, history: list[dict]):
     error = None
+    memory.CURRENT_CHAT.set(run.chat_id)  # the memory tools record where a note came from
     try:
-        async for ev in agent.run(name, key, model, history):
+        try:
+            notes = await memory.context(run.chat_id, history)
+        except Exception:
+            notes = ""  # memory must never stop a reply
+        async for ev in agent.run(name, key, model, history, notes):
             if "error" in ev:
                 error = ev["error"]
             run.push(ev)
@@ -109,6 +114,8 @@ async def _execute(run: Run, name: str, key: str, model: str, history: list[dict
             msg = assistant_message(run.events)
             messages = doc["messages"] + ([msg] if msg else [])
             chats.save(run.chat_id, messages, error=error)
+            if not error and not any("stopped" in e for e in run.events):
+                asyncio.ensure_future(memory.learn(run.chat_id, name, key, model))
         run.finished = True
         run.wake()
 

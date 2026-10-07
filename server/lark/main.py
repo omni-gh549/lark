@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import agent, auth, chats, files, providers, runs, sandbox, search, telegram, vault
+from . import agent, auth, chats, files, memory, providers, runs, sandbox, search, telegram, vault
 
 KEY_NAMES = set(providers.PROVIDERS) | set(search.SEARCH_PROVIDERS) | {"telegram"}
 DIST = Path(os.environ.get("LARK_DIST", Path(__file__).resolve().parents[2] / "web" / "dist"))
@@ -18,6 +18,8 @@ DIST = Path(os.environ.get("LARK_DIST", Path(__file__).resolve().parents[2] / "w
 @asynccontextmanager
 async def lifespan(_app):
     poller = asyncio.ensure_future(telegram.poll())  # the Telegram bot, when a token is saved
+    await asyncio.to_thread(memory.reindex)  # index chats saved before memory existed (cheap when already done)
+    memory.schedule_embed()
     yield
     poller.cancel()
 
@@ -81,6 +83,7 @@ def view_settings() -> dict:
         "models": s["models"],
         "search": s["search"],
         "browser_cookies": s["browser_cookies"],
+        "memory": {"use": s["memory_use"], "learn": s["memory_learn"], "embedding_model": s["embedding_model"], **memory.stats()},
         "auth": bool(auth.password()),
         "sandbox": sandbox.configured(),
         "providers": {
@@ -105,6 +108,9 @@ class SettingsIn(BaseModel):
     models: dict[str, str] | None = None
     search: str | None = None
     browser_cookies: bool | None = None
+    memory_use: bool | None = None
+    memory_learn: bool | None = None
+    embedding_model: str | None = Field(default=None, max_length=200)
 
 
 @app.put("/api/settings")
@@ -115,7 +121,11 @@ async def put_settings(body: SettingsIn):
         return err(400, "Unknown provider.")
     if body.search and body.search not in search.SEARCH_PROVIDERS:
         return err(400, "Unknown search provider.")
-    vault.update(body.provider, {k: v.strip() for k, v in (body.models or {}).items()}, body.search, body.browser_cookies)
+    if body.embedding_model is not None and body.embedding_model.strip() != vault.load()["embedding_model"]:
+        memory.reset_embeddings()  # vectors from another model aren't comparable
+        memory.schedule_embed()
+    vault.update(body.provider, {k: v.strip() for k, v in (body.models or {}).items()}, body.search, body.browser_cookies,
+                 body.memory_use, body.memory_learn, body.embedding_model)
     return view_settings()
 
 
@@ -158,6 +168,71 @@ async def test_key(name: str):
         return {"ok": True, "detail": await providers.check_key(name, key)}
     except Exception as e:
         return err(400, str(e) if isinstance(e, RuntimeError) else "Could not reach the provider.")
+
+
+class FactIn(BaseModel):
+    text: str = Field(min_length=1, max_length=memory.MAX_FACT)
+    kind: str = "fact"
+    subject: str = Field(default="", max_length=60)
+    importance: int = Field(default=3, ge=1, le=5)
+    pinned: bool = False
+
+
+class FactEdit(BaseModel):
+    text: str | None = Field(default=None, max_length=memory.MAX_FACT)
+    kind: str | None = None
+    subject: str | None = Field(default=None, max_length=60)
+    importance: int | None = Field(default=None, ge=1, le=5)
+    pinned: bool | None = None
+
+
+def fact_view(f: dict) -> dict:
+    doc = memory.read_messages(f["source_chat"], 0, 1) if f["source_chat"] else None
+    return {**f, "source_title": doc["title"] if doc else None}
+
+
+@app.get("/api/memory")
+async def list_memory(q: str = "", kind: str = ""):
+    return {"facts": [fact_view(f) for f in memory.list_facts(q or None, kind or None)], "counts": memory.stats()}
+
+
+@app.post("/api/memory")
+async def add_memory(body: FactIn):
+    try:
+        fid = memory.add_fact(body.text, body.kind, body.subject, body.importance, body.pinned)
+    except ValueError as e:
+        return err(400, str(e))
+    memory.schedule_embed()
+    return fact_view(memory.get_fact(fid))
+
+
+@app.put("/api/memory/{fact_id}")
+async def edit_memory(fact_id: int, body: FactEdit):
+    try:
+        ok = memory.update_fact(fact_id, **body.model_dump())
+    except ValueError as e:
+        return err(400, str(e))
+    if not ok:
+        return err(404, "No such memory.")
+    memory.schedule_embed()
+    return fact_view(memory.get_fact(fact_id))
+
+
+@app.delete("/api/memory/{fact_id}")
+async def delete_memory(fact_id: int):
+    return {"ok": bool(memory.delete_fact(fact_id))}
+
+
+@app.delete("/api/memory")
+async def clear_memory(confirm: str = ""):
+    if confirm != "all":
+        return err(400, "Pass confirm=all to forget everything.")
+    return {"deleted": memory.clear_facts()}
+
+
+@app.get("/api/memory/search")
+async def search_memory_chats(q: str = ""):
+    return {"hits": memory.search_messages(q, 20, include_contacts=True, per_chat=2)}
 
 
 class ContactIn(BaseModel):

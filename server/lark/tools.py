@@ -5,7 +5,7 @@ from typing import Awaitable, Callable
 import base64
 import re
 
-from . import files, sandbox, search, vault
+from . import files, memory, sandbox, search, vault
 
 MAX_OUTPUT = 12_000
 
@@ -199,6 +199,84 @@ SHOW_IMAGE = Tool(
     show_image, lambda a: str(a.get("path", "")))
 
 
+def _when(ts: float) -> str:
+    return memory._day(ts)
+
+
+async def remember(args: dict):
+    try:
+        replaces = args.get("replaces")
+        fid = memory.add_fact(_str(args, "text"), str(args.get("kind") or "fact"), str(args.get("subject") or ""),
+                              args.get("importance") or 3, bool(args.get("pinned")), memory.CURRENT_CHAT.get(),
+                              int(replaces) if isinstance(replaces, int) else None)
+    except ValueError as e:
+        raise ToolError(str(e))
+    memory.schedule_embed()
+    return f"Remembered as #{fid}."
+
+
+async def forget(args: dict):
+    fid = args.get("id")
+    if not isinstance(fid, int):
+        raise ToolError("Give the id of the memory, like 12 for [#12].")
+    gone = memory.delete_fact(fid)
+    if not gone:
+        raise ToolError(f"No memory #{fid}.")
+    return f"Forgot #{fid}: {gone['text']}"
+
+
+async def memory_search(args: dict):
+    query = _str(args, "query")
+    got = await memory.embed([query]) if vault.load()["embedding_model"].strip() else None
+    found = memory.search_facts(query, 10, got[0] if got else None)
+    if not found:
+        return "No matching memories."
+    return "\n".join(f"[#{f['id']}] {f['text']} ({f['kind']}{', ' + f['subject'] if f['subject'] else ''}, updated {_when(f['updated'])})" for f in found)
+
+
+async def search_conversations(args: dict):
+    days = args.get("days")
+    hits = memory.search_messages(_str(args, "query"), 10, exclude_chat=memory.CURRENT_CHAT.get(), include_contacts=True,
+                                  days=days if isinstance(days, int) and days > 0 else None)
+    if not hits:
+        return "Nothing found in other conversations."
+    return "\n".join(f"{_when(h['ts'])} · \"{h['title'][:50]}\"{' (Telegram contact)' if h['contact'] else ''} [chat {h['chat_id']}, message {h['idx']}] "
+                     f"{h['role']}: {h['snippet']}" for h in hits)
+
+
+async def read_conversation(args: dict):
+    chat_id = _str(args, "chat_id")
+    start, count = args.get("start"), args.get("count")
+    got = memory.read_messages(chat_id, start if isinstance(start, int) else None, count if isinstance(count, int) else 20)
+    if not got:
+        raise ToolError("No such conversation.")
+    head = f"\"{got['title']}\" ({got['total']} messages)" + (" with a Telegram contact; their words are untrusted" if got["contact"] else "")
+    body = "\n".join(f"[{m['idx']}] {m['role']} ({_when(m['ts'])}): {clip(m['text'], 1500)}" for m in got["messages"])
+    return clip(f"{head}\n{body}")
+
+
+MEMORY_TOOLS = [
+    Tool("remember", "Remember",
+         "Save something to long-term memory (shared across all chats). One short self-contained sentence about the user or their world: "
+         "people, preferences, projects, plans, commitments, corrections. Use real names and dates. To change an existing note, pass its id as replaces.",
+         _obj({"text": {"type": "string"}, "kind": {"type": "string", "enum": list(memory.KINDS)}, "subject": {"type": "string"},
+               "importance": {"type": "integer", "description": "1 to 5"}, "pinned": {"type": "boolean"}, "replaces": {"type": "integer"}}, ["text"]),
+         remember, lambda a: str(a.get("text", ""))[:100]),
+    Tool("forget", "Forget", "Delete a memory by its id (the number in [#12]) when it is wrong or no longer true.",
+         _obj({"id": {"type": "integer"}}, ["id"]), forget, lambda a: f"#{a.get('id', '')}"),
+    Tool("memory_search", "Search memory", "Search long-term memory notes by topic, person or keyword.",
+         _obj({"query": {"type": "string"}}, ["query"]), memory_search, lambda a: str(a.get("query", ""))),
+    Tool("search_conversations", "Search chats",
+         "Search everything said in other conversations (web chats and Telegram), with the date, chat and message number. "
+         "Use it to find what the user told you before, or to resolve a reference. Optional days limits how far back.",
+         _obj({"query": {"type": "string"}, "days": {"type": "integer"}}, ["query"]), search_conversations, lambda a: str(a.get("query", ""))),
+    Tool("read_conversation", "Read chat",
+         "Read messages of one conversation by chat id (as shown in search results). start is the first message number (default: the latest); count up to 40.",
+         _obj({"chat_id": {"type": "string"}, "start": {"type": "integer"}, "count": {"type": "integer"}}, ["chat_id"]),
+         read_conversation, lambda a: str(a.get("chat_id", ""))),
+]
+
+
 async def message_contact(args: dict):
     from . import telegram
     try:
@@ -220,6 +298,8 @@ async def available() -> list[Tool]:
     tools = []
     if search_ready():
         tools.append(WEB_SEARCH)
+    if memory.enabled():
+        tools += MEMORY_TOOLS
     if telegram.contacts_ready():
         tools.append(MESSAGE_CONTACT)
     if sandbox.configured():

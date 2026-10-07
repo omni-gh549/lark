@@ -6,11 +6,12 @@
   import Chat from "./lib/Chat.svelte";
   import Projects from "./lib/Projects.svelte";
   import Settings from "./lib/Settings.svelte";
+  import Memory from "./lib/Memory.svelte";
   import Gallery from "./lib/Gallery.svelte";
   import Panels from "./lib/Panels.svelte";
   import Login from "./lib/Login.svelte";
 
-  const ROUTES = ["chat", "projects", "settings", "components"];
+  const ROUTES = ["chat", "projects", "memory", "settings", "components"];
   const fromHash = () => {
     const h = location.hash.slice(1);
     return ROUTES.includes(h) ? h : "chat";
@@ -132,6 +133,7 @@
             <div class="menu-head">
               <span class="menu-sub">{active}</span>
             </div>
+            <button onclick={() => go("memory")}>Memory</button>
             <button onclick={() => go("settings")}>Settings</button>
             {#if app.settings?.auth}
               <hr />
@@ -149,6 +151,8 @@
         <Chat onsettings={() => go("settings")} />
       {:else if route === "projects"}
         <Projects />
+      {:else if route === "memory"}
+        <Memory onopen={async (id) => { await openChat(id); go("chat"); }} />
       {:else if route === "settings"}
         <Settings />
       {:else}

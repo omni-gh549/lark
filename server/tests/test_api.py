@@ -92,7 +92,7 @@ run("chat deleted", c.get("/api/chats").json() == {"chats": []} and c.get("/api/
 
 # tools
 ev = chat("tools")
-run("no tools offered when nothing is set up", "".join(e.get("text", "") for e in ev) == "")
+run("only memory tools offered when nothing else is set up", "".join(e.get("text", "") for e in ev) == "remember,forget,memory_search,search_conversations,read_conversation,subagent")
 r = c.put("/api/keys/brave", json={"key": "brave-bad-key"})
 run("search key saved, hint only", r.json()["search_providers"]["brave"]["key_hint"] == "-key" and "brave-bad" not in r.text)
 r = c.post("/api/keys/brave/test")
@@ -102,7 +102,7 @@ run("good search key tests ok", c.post("/api/keys/brave/test").json()["ok"])
 run("bad search provider rejected", c.put("/api/settings", json={"search": "nope"}).status_code == 400)
 run("search provider persisted", c.put("/api/settings", json={"search": "brave"}).json()["search"] == "brave")
 ev = chat("tools")
-run("web_search offered once a key exists", "".join(e.get("text", "") for e in ev) == "web_search,subagent")
+run("web_search offered once a key exists", "".join(e.get("text", "") for e in ev) == "web_search,remember,forget,memory_search,search_conversations,read_conversation,subagent")
 ev = chat("search cats")
 kinds = [next(iter(e)) for e in ev]
 run("tool loop events in order", kinds[:2] == ["tool_start", "tool_end"] and kinds[-1] == "done")
@@ -118,7 +118,7 @@ os.environ.update(LARK_SANDBOX_URL="http://127.0.0.1:8796", LARK_SANDBOX_TOKEN="
 st = c.get("/api/sandbox").json()
 run("sandbox status ok", st["configured"] and st["ok"])
 ev = chat("tools")
-run("sandbox tools offered", "".join(e.get("text", "") for e in ev) == "web_search,run_command,read_file,write_file,show_image,browser,subagent")
+run("sandbox tools offered", "".join(e.get("text", "") for e in ev) == "web_search,remember,forget,memory_search,search_conversations,read_conversation,run_command,read_file,write_file,show_image,browser,subagent")
 ev = chat("run echo hi && exit 2")
 run("run_command output and exit code", "hi" in ev[1]["tool_end"]["output"] and "exit code 2" in ev[1]["tool_end"]["output"])
 os.environ["LARK_SANDBOX_TOKEN"] = "wrong"
@@ -319,6 +319,9 @@ sent = []
 
 
 async def fake_api(method, token=None, files_=None, _timeout=20, **params):
+    if method == "getUpdates":
+        await asyncio.sleep(1)
+        return []
     sent.append((method, params))
     if method == "getMe":
         return {"username": "lark_test_bot"}
@@ -427,6 +430,124 @@ r = c.delete(f"/api/telegram/contacts/{sam}")
 run("remove contact", r.json()["contacts"] == [])
 run("unlink owner", c.delete("/api/telegram/owner").json()["ok"] and c.get("/api/telegram").json()["owner"] is None)
 c.delete("/api/keys/telegram")
+
+
+# ---- memory ----
+from lark import memory, tools as _tools  # noqa: E402
+
+c.put("/api/settings", json={"provider": "openrouter", "models": {"openrouter": "a/model"}})
+s = c.get("/api/settings").json()
+run("memory settings default on", s["memory"]["use"] and s["memory"]["learn"] and s["memory"]["facts"] == 0)
+
+r = c.post("/api/memory", json={"text": "The user's sister Maya lives in Lisbon.", "kind": "person", "subject": "Maya", "importance": 4})
+fid = r.json()["id"]
+run("add a memory", r.status_code == 200 and r.json()["kind"] == "person")
+run("empty memory rejected", c.post("/api/memory", json={"text": ""}).status_code == 422)
+run("repeat is merged, not duplicated", c.post("/api/memory", json={"text": "the user's sister maya lives in lisbon"}).json()["id"] == fid)
+c.post("/api/memory", json={"text": "The user takes oat milk in coffee.", "kind": "preference"})
+run("list and search memories", len(c.get("/api/memory").json()["facts"]) == 2
+    and [f["id"] for f in c.get("/api/memory?q=oat").json()["facts"]] != [fid])
+r = c.put(f"/api/memory/{fid}", json={"pinned": True, "text": "The user's sister Maya lives in Lisbon, Portugal."})
+run("edit and pin", r.json()["pinned"] and "Portugal" in r.json()["text"])
+run("edit unknown id", c.put("/api/memory/9999", json={"pinned": True}).status_code == 404)
+
+c.put("/api/chats/memchat-0001", json={"messages": [{"role": "user", "content": "We should book the cheese farm tour near Sintra"},
+                                                     {"role": "assistant", "content": "Sounds good, I'd go on a weekday."}]})
+hits = c.get("/api/memory/search?q=sintra").json()["hits"]
+run("conversations are searchable", hits and hits[0]["chat_id"] == "memchat-0001" and "Sintra" in hits[0]["snippet"])
+run("search finds assistant words too", c.get("/api/memory/search?q=weekday").json()["hits"][0]["role"] == "assistant")
+
+c.post("/api/chats/memchat-0002/send", json={"content": "sysdump"})
+for _ in range(50):
+    time.sleep(0.1)
+    if not c.get("/api/chats/memchat-0002").json()["running"]:
+        break
+sysmsg = c.get("/api/chats/memchat-0002").json()["messages"][-1]["content"]
+run("pinned memory is in the prompt", "Maya lives in Lisbon" in sysmsg and f"[#{fid}]" in sysmsg)
+
+c.post("/api/chats/memchat-0003/send", json={"content": "when are we doing the cheese tour again? sysdump"})
+for _ in range(50):
+    time.sleep(0.1)
+    if not c.get("/api/chats/memchat-0003").json()["running"]:
+        break
+sysmsg = c.get("/api/chats/memchat-0003").json()["messages"][-1]["content"]
+run("relevant earlier chat is surfaced", "cheese farm tour near Sintra" in sysmsg and "memchat-0001" in sysmsg)
+
+c.post("/api/chats/memchat-0004/send", json={"content": "my cat is a menace"})
+for _ in range(80):
+    time.sleep(0.1)
+    if any("Miso" in f["text"] for f in c.get("/api/memory").json()["facts"]) and memory.summary_of("memchat-0004"):
+        break
+facts = c.get("/api/memory").json()["facts"]
+miso = [f for f in facts if "Miso" in f["text"]]
+run("the learner adds a memory with its source chat", miso and miso[0]["source_chat"] == "memchat-0004" and miso[0]["source_title"].startswith("my cat"))
+run("the learner writes a chat summary", memory.summary_of("memchat-0004").startswith("Talked about: my cat"))
+
+c.post("/api/chats/memchat-0005/send", json={"content": "my sister moved, sysdump"})
+for _ in range(80):
+    time.sleep(0.1)
+    if any("Porto" in f["text"] for f in c.get("/api/memory").json()["facts"]):
+        break
+run("the learner updates a changed fact instead of duplicating", sum("Maya" in f["text"] for f in c.get("/api/memory").json()["facts"]) == 1
+    and any("Porto" in f["text"] for f in c.get("/api/memory").json()["facts"]))
+
+c.post("/api/chats/memchat-0006/send", json={"content": "sysdump"})
+for _ in range(50):
+    time.sleep(0.1)
+    if not c.get("/api/chats/memchat-0006").json()["running"]:
+        break
+run("recent chat summaries reach the prompt", "Recent conversations" in c.get("/api/chats/memchat-0006").json()["messages"][-1]["content"])
+
+ev = chat("remember the user is allergic to peanuts")
+run("remember tool writes a memory", any(e.get("tool_end", {}).get("ok") for e in ev) and any("peanuts" in f["text"] for f in memory.list_facts()))
+pid = [f for f in memory.list_facts() if "peanuts" in f["text"]][0]["id"]
+r = c.portal.call(_tools.forget, {"id": pid})
+run("forget tool", "Forgot" in r and not any("peanuts" in f["text"] for f in memory.list_facts()))
+try:
+    c.portal.call(_tools.forget, {"id": 987654})
+    gone_ok = False
+except _tools.ToolError as e:
+    gone_ok = "No memory" in str(e)
+run("forget unknown id is an error", gone_ok)
+run("search finds nothing for a forgotten memory", "No matching" in c.portal.call(_tools.memory_search, {"query": "peanuts"}))
+run("search_conversations tool", "Sintra" in c.portal.call(_tools.search_conversations, {"query": "sintra"}))
+r = c.portal.call(_tools.read_conversation, {"chat_id": "memchat-0001"})
+run("read_conversation tool", "Sintra" in r and "[0] user" in r and "[1] assistant" in r)
+
+# contact chats are searchable by the owner's tools but never feed memory or the prompt
+chats_save = __import__("lark.chats", fromlist=["save"]).save
+chats_save("tg-555000111", [{"role": "user", "content": "the secret handshake is zebra"}, {"role": "assistant", "content": "ok"}])
+run("contact chats stay out of normal search", memory.search_messages("zebra") == [] and len(memory.search_messages("zebra", include_contacts=True)) == 1)
+run("contact chats are never learned from or injected", memory.summary_of("tg-555000111") == ""
+    and "zebra" not in c.portal.call(memory.context, "memchat-0009", [{"role": "user", "content": "the secret handshake zebra"}]))
+c.delete("/api/chats/tg-555000111")
+
+# meaning-based matching (the embeddings API is faked)
+c.post("/api/memory", json={"text": "The user's feline is called Whiskers.", "kind": "person"})
+run("no vector match without an embedding model", "No matching" in c.portal.call(_tools.memory_search, {"query": "my cat"}) or "Whiskers" not in c.portal.call(_tools.memory_search, {"query": "my cat"}))
+c.put("/api/settings", json={"embedding_model": "emb-1"})
+c.portal.call(memory.embed_missing)
+run("vector match finds a memory with no shared words", "Whiskers" in c.portal.call(_tools.memory_search, {"query": "tell me about my kitten"}))
+c.put("/api/settings", json={"embedding_model": ""})
+
+# switches
+c.put("/api/settings", json={"memory_use": False})
+ev = chat("tools")
+run("memory off removes the tools", "remember" not in "".join(e.get("text", "") for e in ev))
+c.post("/api/chats/memchat-0007/send", json={"content": "sysdump"})
+for _ in range(50):
+    time.sleep(0.1)
+    if not c.get("/api/chats/memchat-0007").json()["running"]:
+        break
+run("memory off removes the notes", "Maya" not in c.get("/api/chats/memchat-0007").json()["messages"][-1]["content"])
+c.put("/api/settings", json={"memory_use": True})
+
+c.delete("/api/chats/memchat-0001")
+run("deleting a chat removes it from search", all(h["chat_id"] != "memchat-0001" for h in c.get("/api/memory/search?q=sintra").json()["hits"]))
+run("forget everything needs confirmation", c.delete("/api/memory").status_code == 400)
+run("forget everything", c.delete("/api/memory?confirm=all").json()["deleted"] >= 3 and c.get("/api/memory").json()["facts"] == [])
+for i in range(2, 8):
+    c.delete(f"/api/chats/memchat-000{i}")
 
 c.delete("/api/keys/gateway")
 run("delete key", c.get("/api/settings").json()["providers"]["gateway"]["key_hint"] is None)

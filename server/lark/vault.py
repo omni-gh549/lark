@@ -15,6 +15,9 @@ DEFAULTS = {
     "models": {"openrouter": "deepseek/deepseek-v4.1-flash", "gateway": ""},
     "search": "brave",
     "browser_cookies": False,  # keep the sandbox browser's cookies and logins between sessions
+    "memory_use": True,  # remember across chats: the notes in the prompt and the memory tools
+    "memory_learn": True,  # learn from conversations automatically, after each reply
+    "embedding_model": "",  # optional: match memories by meaning (needs an embeddings model on the chosen provider)
     "keys": {},
 }
 
@@ -48,6 +51,9 @@ def load() -> dict:
         "models": {**DEFAULTS["models"], **data.get("models", {})},
         "search": data.get("search", DEFAULTS["search"]),
         "browser_cookies": bool(data.get("browser_cookies", False)),
+        "memory_use": bool(data.get("memory_use", True)),
+        "memory_learn": bool(data.get("memory_learn", True)),
+        "embedding_model": str(data.get("embedding_model", "")),
         "keys": data.get("keys", {}),
     }
 
@@ -61,10 +67,16 @@ def _save(data: dict):
     os.replace(tmp, SETTINGS)
 
 
-def update(provider=None, models=None, search=None, browser_cookies=None):
+def update(provider=None, models=None, search=None, browser_cookies=None, memory_use=None, memory_learn=None, embedding_model=None):
     data = load()
     if browser_cookies is not None:
         data["browser_cookies"] = bool(browser_cookies)
+    if memory_use is not None:
+        data["memory_use"] = bool(memory_use)
+    if memory_learn is not None:
+        data["memory_learn"] = bool(memory_learn)
+    if embedding_model is not None:
+        data["embedding_model"] = embedding_model.strip()[:200]
     if provider:
         data["provider"] = provider
     if search:
