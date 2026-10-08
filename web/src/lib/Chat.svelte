@@ -11,7 +11,7 @@
 
   let { onsettings } = $props();
   onMount(() => {
-    init().then(() => tick()).then(scrollDown);
+    init().then(() => tick()).then(jump);
   });
   let text = $state("");
   let box = $state();
@@ -55,14 +55,11 @@
     note = "";
     await tick(); // let the cleared value reach the textarea before measuring it
     resize();
+    jump(); // sending puts you back at the bottom
     const p = send(t, ids);
     await tick();
-    scrollDown();
+    jump();
     await p;
-  }
-
-  function scrollDown() {
-    if (thread) thread.scrollTop = thread.scrollHeight;
   }
 
   function resize() {
@@ -78,20 +75,53 @@
     }
   }
 
-  // follow the stream unless the reader has scrolled up
-  $effect(() => {
-    const last = chat.messages.at(-1);
-    last?.content;
-    last?.parts?.length;
-    last?.parts?.at(-1)?.state;
+  // Follow the conversation while the reader is at the bottom, whatever grows: text, tool cards, images, tables, the browser window.
+  // "At the bottom" comes from the reader's own scrolling, not from measuring after the page has already grown.
+  let stuck = true;
+  let unseen = $state(false); // new content arrived while the reader is up in the history
+  let frame = 0;
+  const atBottom = () => !thread || thread.scrollHeight - thread.scrollTop - thread.clientHeight < 80;
+  function follow() {
     if (!thread) return;
-    const near = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 120;
-    if (near) tick().then(scrollDown);
+    if (!stuck) {
+      unseen = true;
+      return;
+    }
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => thread && (thread.scrollTop = thread.scrollHeight)); // instant: smooth scrolling fights fast updates
+  }
+  function onscroll() {
+    stuck = atBottom();
+    if (stuck) unseen = false;
+  }
+  function jump() {
+    stuck = true;
+    unseen = false;
+    follow();
+  }
+  $effect(() => {
+    if (!thread) return;
+    const watch = new ResizeObserver(follow);
+    const watchAll = () => [...thread.children].forEach((c) => watch.observe(c));
+    const changes = new MutationObserver(() => {
+      watchAll();
+      follow();
+    });
+    watchAll();
+    changes.observe(thread, { childList: true, subtree: true, characterData: true });
+    const loaded = () => follow(); // images finishing loading push everything down
+    thread.addEventListener("load", loaded, true);
+    return () => {
+      watch.disconnect();
+      changes.disconnect();
+      thread.removeEventListener("load", loaded, true);
+      cancelAnimationFrame(frame);
+    };
   });
 </script>
 
 <section class="view chat">
-  <div class="thread" bind:this={thread}>
+  <div class="thread" bind:this={thread} {onscroll}>
     {#each chat.messages as m}
       {#if m.role === "user"}
         <div class="msg me">
@@ -134,7 +164,10 @@
     {/each}
   </div>
 
-  <div>
+  <div class="composer-wrap">
+    {#if unseen}
+      <button type="button" class="newer" onclick={jump}>New messages ↓</button>
+    {/if}
     {#if !configured()}
       <p class="notice">Add an API key in <a href="#settings" onclick={onsettings}>Settings</a> to start chatting.</p>
     {/if}
