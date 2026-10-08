@@ -163,6 +163,10 @@ main { min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); grid-te
 }
 .thread::-webkit-scrollbar { display: none; }
 .composer-wrap { position: relative; }
+.rail { position: fixed; right: 3px; top: calc(var(--top) + 12px); bottom: 96px; width: 10px; z-index: 5; }
+.thumb-bar { position: absolute; right: 2px; width: 5px; border-radius: 3px; background: var(--ink); opacity: 0.18; cursor: default; transition: opacity 0.2s, width 0.15s; }
+.rail:hover .thumb-bar, .thumb-bar:active { opacity: 0.4; width: 6px; }
+@media (max-width: 600px) { .rail { display: none; } }
 .newer {
   position: absolute; left: 50%; top: -38px; transform: translateX(-50%); padding: 6px 14px; border-radius: 999px;
   background: var(--accent); color: var(--on-accent); font-size: 13px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);

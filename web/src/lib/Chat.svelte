@@ -90,15 +90,51 @@
     cancelAnimationFrame(frame);
     frame = requestAnimationFrame(() => thread && (thread.scrollTop = thread.scrollHeight)); // instant: smooth scrolling fights fast updates
   }
+  // the custom scrollbar on the right edge of the page
+  let rail = $state(), bar = $state({ top: 0, size: 0 });
+  function measure() {
+    if (!thread || !rail) return;
+    const { scrollTop, scrollHeight, clientHeight } = thread;
+    const room = rail.clientHeight;
+    if (scrollHeight <= clientHeight + 1) return void (bar = { top: 0, size: 0 });
+    const size = Math.max(36, (clientHeight / scrollHeight) * room);
+    bar = { top: (scrollTop / (scrollHeight - clientHeight)) * (room - size), size };
+  }
   function onscroll() {
     stuck = atBottom();
     if (stuck) unseen = false;
+    measure();
+  }
+  function drag(e) {
+    e.preventDefault();
+    const startY = e.clientY, startTop = thread.scrollTop;
+    const ratio = (thread.scrollHeight - thread.clientHeight) / Math.max(1, rail.clientHeight - bar.size);
+    const move = (ev) => (thread.scrollTop = startTop + (ev.clientY - startY) * ratio);
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+  function railclick(e) {
+    if (e.target !== rail) return;
+    thread.scrollBy({ top: (e.clientY < rail.getBoundingClientRect().top + bar.top ? -1 : 1) * thread.clientHeight * 0.9, behavior: "smooth" });
   }
   function jump() {
     stuck = true;
     unseen = false;
     follow();
   }
+  let shown = null;
+  $effect(() => {
+    // opening or switching to a chat starts at the latest message, and stays there while it lays out
+    const id = chat.id;
+    if (thread && id !== shown) {
+      shown = id;
+      jump();
+    }
+  });
   $effect(() => {
     if (!thread) return;
     const watch = new ResizeObserver(follow);
@@ -106,14 +142,29 @@
     const changes = new MutationObserver(() => {
       watchAll();
       follow();
+      measure();
     });
     watchAll();
     changes.observe(thread, { childList: true, subtree: true, characterData: true });
+    const sized = new ResizeObserver(measure);
+    sized.observe(thread);
     const loaded = () => follow(); // images finishing loading push everything down
     thread.addEventListener("load", loaded, true);
+    // the wheel works anywhere on the page, not just over the centre column
+    const wheel = (e) => {
+      if (e.ctrlKey || e.defaultPrevented || thread.contains(e.target)) return;
+      for (let el = e.target; el instanceof Element && el !== document.body; el = el.parentElement) {
+        const y = getComputedStyle(el).overflowY;
+        if ((y === "auto" || y === "scroll") && el.scrollHeight > el.clientHeight) return; // something else scrolls there
+      }
+      thread.scrollBy({ top: e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY });
+    };
+    window.addEventListener("wheel", wheel, { passive: true });
     return () => {
+      window.removeEventListener("wheel", wheel);
       watch.disconnect();
       changes.disconnect();
+      sized.disconnect();
       thread.removeEventListener("load", loaded, true);
       cancelAnimationFrame(frame);
     };
@@ -162,6 +213,10 @@
         </div>
       {/if}
     {/each}
+  </div>
+
+  <div class="rail" bind:this={rail} onpointerdown={railclick} aria-hidden="true">
+    {#if bar.size}<div class="thumb-bar" style="top:{bar.top}px;height:{bar.size}px" onpointerdown={drag}></div>{/if}
   </div>
 
   <div class="composer-wrap">
