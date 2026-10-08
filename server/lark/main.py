@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import agent, auth, chats, files, health, memory, providers, runs, sandbox, search, telegram, titles, tools, vault
+from . import agent, auth, chats, files, health, memory, providers, runs, sandbox, search, telegram, timeline, titles, tools, vault
 
 KEY_NAMES = set(providers.PROVIDERS) | set(search.SEARCH_PROVIDERS) | {"telegram"}
 DIST = Path(os.environ.get("LARK_DIST", Path(__file__).resolve().parents[2] / "web" / "dist"))
@@ -26,10 +26,24 @@ async def lifespan(_app):
     except Exception as e:
         health.record("run", f"resume failed: {type(e).__name__}")
     backfill = asyncio.ensure_future(_name_old_chats())
+    catch_up = asyncio.ensure_future(_catch_up_memory())
     yield
     poller.cancel()
     backfill.cancel()
-    await asyncio.gather(poller, backfill, return_exceptions=True)  # let them finish cancelling before the server exits
+    catch_up.cancel()
+    await asyncio.gather(poller, backfill, catch_up, return_exceptions=True)  # let them finish cancelling before the server exits
+
+
+async def _catch_up_memory():
+    """At start: bring chats into the long-term timeline that aren't there yet (first run after it arrived, or after downtime)."""
+    try:
+        s = vault.load()
+        key = vault.get_key(s["provider"])
+        model = s["models"].get(s["provider"], "")
+        if key and model:
+            await timeline.catch_up(s["provider"], key, model)
+    except Exception as e:
+        health.record("memory", f"could not update the timeline: {type(e).__name__}")
 
 
 async def _name_old_chats():

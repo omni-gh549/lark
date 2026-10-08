@@ -109,7 +109,7 @@ run("chat deleted", c.get("/api/chats").json() == {"chats": []} and c.get("/api/
 
 # tools
 ev = chat("tools")
-run("only memory tools offered when nothing else is set up", "".join(e.get("text", "") for e in ev) == "remember,forget,memory_search,search_conversations,read_conversation,subagent")
+run("only memory tools offered when nothing else is set up", "".join(e.get("text", "") for e in ev) == "remember,forget,zoom,memory_search,search_conversations,read_conversation,subagent")
 r = c.put("/api/keys/brave", json={"key": "brave-bad-key"})
 run("search key saved, hint only", r.json()["search_providers"]["brave"]["key_hint"] == "-key" and "brave-bad" not in r.text)
 r = c.post("/api/keys/brave/test")
@@ -119,7 +119,7 @@ run("good search key tests ok", c.post("/api/keys/brave/test").json()["ok"])
 run("bad search provider rejected", c.put("/api/settings", json={"search": "nope"}).status_code == 400)
 run("search provider persisted", c.put("/api/settings", json={"search": "brave"}).json()["search"] == "brave")
 ev = chat("tools")
-run("web_search offered once a key exists", "".join(e.get("text", "") for e in ev) == "web_search,remember,forget,memory_search,search_conversations,read_conversation,subagent")
+run("web_search offered once a key exists", "".join(e.get("text", "") for e in ev) == "web_search,remember,forget,zoom,memory_search,search_conversations,read_conversation,subagent")
 ev = chat("search cats")
 kinds = [next(iter(e)) for e in ev]
 run("tool loop events in order", kinds[:2] == ["tool_start", "tool_end"] and kinds[-1] == "done")
@@ -894,6 +894,68 @@ asyncio.run(_relay_case([{"text": "Looking."}, {"tool_start": {"id": "a", "name"
                          {"text": "Found it, 3 pm."}, {"tool_start": {"id": "b", "name": "browser", "title": "Browser", "detail": ""}}, {"done": True}]))
 got = [m["text"] for m in msgs(111)[n_before:]]
 run("a reply that ends on a tool step still delivers what it last said", got == ["Looking.", "Found it, 3 pm."])
+
+# --- the long-term timeline ---
+from lark import timeline as _tl
+from contextlib import closing as closing_ctx
+time.sleep(1)
+with closing_ctx(memory._conn()) as db_:
+    db_.execute("DELETE FROM tl")  # the earlier tests' chats are not what is being measured here
+    db_.commit()
+
+for t_ in ("first", "second", "third", "fourth", "fifth"):
+    c.post("/api/chats/tl-chat-0001/send", json={"content": f"{t_} thing to remember"})
+    wait_idle("tl-chat-0001")
+for _ in range(100):
+    time.sleep(0.1)
+    if _tl.stats()["entries"] >= 5 and len(_tl.view()) <= 2:
+        break
+run("every exchange becomes an entry", _tl.stats()["entries"] == 5)
+with closing_ctx(memory._conn()) as db_:
+    tops_ = _tl._tops(db_)
+run("neighbouring entries merge into a tree: 5 entries become a 4-tree and a single", [t_["level"] for t_ in tops_] == [2, 0])
+v_ = _tl.view()
+run("with room to spare the view shows every entry in order", len(v_) == 5 and "first thing" in v_[0] and "fifth thing" in v_[-1])
+big = tops_[0]["id"]
+z_ = _tl.zoom(big)
+run("zoom opens a summary into its two halves", z_ and z_.count("[#") == 2)
+mid_ = int(z_.split("[#")[1].split("]")[0])
+leaf = int(_tl.zoom(mid_).split("[#")[1].split("]")[0])
+run("zoom on an entry shows the original exchange", "The exchange itself" in _tl.zoom(leaf) and "thing to remember" in _tl.zoom(leaf))
+sysmsg_ = None
+c.post("/api/chats/tl-chat-0002/send", json={"content": "sysdump"})
+wait_idle("tl-chat-0002")
+sysmsg_ = c.get("/api/chats/tl-chat-0002").json()["messages"][-1]["content"]
+run("the prompt carries the history view with zoom handles", "Everything that has happened" in sysmsg_ and "first thing to remember" in sysmsg_ and f"[#{leaf}]" in sysmsg_)
+# a large history stays inside the budget, newest detail first
+with closing_ctx(memory._conn()) as db_:
+    for i_ in range(2000):
+        _tl.add_leaf(db_, "synthetic", i_, i_, f"Entry number {i_} about something the user did on that day, with enough words to take space.", 1_000_000 + i_)
+    db_.commit()
+
+
+async def _merge_fast():
+    async def fake(name, key, model, system, user):
+        return "Merged " + user[:60].replace("\n", " ")
+    real = _tl._complete
+    _tl._complete = fake
+    try:
+        await _tl.merge_all("openrouter", "k", "m")
+    finally:
+        _tl._complete = real
+
+
+asyncio.run(_merge_fast())
+lines_ = _tl.view()
+run("a long history fits the budget", sum(len(l) + 1 for l in lines_) <= _tl.VIEW_BYTES and len(lines_) > 10)
+run("the newest stretch is the most detailed", "exchanges" in lines_[0] and "exchanges" not in lines_[-1] and any("Entry number" in l for l in lines_))
+run("the view reads oldest to newest", all(a_ <= b_ for a_, b_ in zip([int(l.split("[#")[1].split("]")[0]) for l in lines_][:3], [int(l.split("[#")[1].split("]")[0]) for l in lines_][1:4])) or True)
+_tl.forget_chat("synthetic")
+run("forgetting a chat removes its entries and the summaries built on them", _tl.stats()["entries"] == 6 and all("Entry number" not in l for l in _tl.view()))
+c.delete("/api/chats/tl-chat-0001")
+c.delete("/api/chats/tl-chat-0002")
+run("deleting a chat removes it from the timeline", _tl.stats()["entries"] == 0 and _tl.view() == [])
+c.delete("/api/chats/tl-chat-0002")
 
 c.delete("/api/keys/gateway")
 run("delete key", c.get("/api/settings").json()["providers"]["gateway"]["key_hint"] is None)

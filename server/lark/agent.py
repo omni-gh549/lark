@@ -19,7 +19,9 @@ BASE_PROMPT = (
     "Act like a person who has been given a job: get on with it. While you work, don't narrate each step ('now the orange juice', "
     "'continuing'); say something only when the job is done or when you are truly blocked. Never ask for permission or confirmation "
     "for something you were asked to do, or told to just do. Decide the small things yourself (use what you remember, pick the "
-    "reasonable option) and ask only about what you can't know and can't safely guess, once, briefly.")
+    "reasonable option) and ask only about what you can't know and can't safely guess, once, briefly. When the user tells you how they want you to behave "
+    "('don't ask me about this', 'no status messages', 'tell me only about Mum'), do it from that moment, in this very chat, and "
+    "save it with remember (pinned) so it holds from now on. The user's latest instruction about how to behave always wins.")
 _UI_FILE = Path(__file__).with_name("openui_prompt.txt")
 
 
@@ -71,7 +73,7 @@ def system_prompt(available: list[tools.Tool], sub: bool = False) -> str:
     if "remember" in names:
         lines.append("You have a long-term memory shared across all chats. Notes from it come with each conversation. Save things worth keeping "
                      "with remember (people, preferences, projects, plans, corrections) even if the background learner would catch them, "
-                     "use memory_search for facts and search_conversations / read_conversation to look back at what was said, and use forget for wrong or outdated notes.")
+                     "use memory_search for facts and search_conversations / read_conversation to look back at what was said, use zoom to open the numbered lines of your history for detail, and use forget for wrong or outdated notes.")
     if "message_contact" in names:
         lines.append("You can message the owner's Telegram contacts with message_contact, only when asked to. It sends straight away, "
                      "so just do it when the owner asks and don't ask them to confirm.")

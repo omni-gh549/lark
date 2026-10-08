@@ -327,6 +327,19 @@ async def read_conversation(args: dict):
     return clip(f"{head}\n{_untrusted(body) if got['contact'] else body}")
 
 
+async def zoom(args: dict):
+    from . import timeline
+    nid = args.get("id")
+    if isinstance(nid, str):
+        nid = int(re.sub(r"\D", "", nid) or 0)
+    if not isinstance(nid, int):
+        raise ToolError("Missing 'id'.")
+    got = timeline.zoom(nid)
+    if not got:
+        raise ToolError(f"No entry #{nid} in your history. Use the ids shown in brackets.")
+    return clip(got)
+
+
 MEMORY_TOOLS = [
     Tool("remember", "Remember",
          "Save something to long-term memory (shared across all chats). One short self-contained sentence about the user or their world: "
@@ -336,6 +349,10 @@ MEMORY_TOOLS = [
          remember, lambda a: str(a.get("text", ""))[:100]),
     Tool("forget", "Forget", "Delete a memory by its id (the number in [#12]) when it is wrong or no longer true.",
          _obj({"id": {"type": "integer"}}, ["id"]), forget, lambda a: f"#{a.get('id', '')}"),
+    Tool("zoom", "Look back",
+         "Open an entry of your history (the [#12] lines in your notes) into what it covers: a condensed stretch opens into its two halves, "
+         "a single entry into the original exchange. Use it when a line looks relevant and you need the detail.",
+         _obj({"id": {"type": "integer"}}, ["id"]), zoom, lambda a: f"#{a.get('id', '')}"),
     Tool("memory_search", "Search memory", "Search long-term memory notes by topic, person or keyword.",
          _obj({"query": {"type": "string"}}, ["query"]), memory_search, lambda a: str(a.get("query", ""))),
     Tool("search_conversations", "Search chats",

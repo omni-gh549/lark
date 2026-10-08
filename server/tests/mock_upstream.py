@@ -1,5 +1,6 @@
 """A fake OpenAI-compatible provider for tests."""
 import json
+import re
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -77,6 +78,19 @@ async def chat(request: Request):
                 if "moved" in said and "Lisbon" in f["text"]:
                     ops.append({"op": "update", "id": f["id"], "text": "The user's sister Maya now lives in Porto."})
             out = json.dumps({"summary": "Talked about: " + said[:50], "ops": ops})
+            yield "data: " + json.dumps({"choices": [{"delta": {"content": out}}]}) + "\n\n"
+            yield "data: [DONE]\n\n"
+            return
+        if "You write memory entries" in system:  # timeline entries
+            n = len(re.findall(r"^Exchange \d+$", last, flags=re.M))
+            users = [l.removeprefix("User: ")[:30] for l in last.split("\n") if l.startswith("User: ")]
+            out = json.dumps({"entries": [f"Said: {u}" for u in users][:n]})
+            yield "data: " + json.dumps({"choices": [{"delta": {"content": out}}]}) + "\n\n"
+            yield "data: [DONE]\n\n"
+            return
+        if "You compress memory entries" in system:  # timeline merge
+            older, newer = last.split("\n\nNewer entry:\n")
+            out = "Merged: " + older.removeprefix("Older entry:\n")[:25] + " + " + newer[:25]
             yield "data: " + json.dumps({"choices": [{"delta": {"content": out}}]}) + "\n\n"
             yield "data: [DONE]\n\n"
             return

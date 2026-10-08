@@ -63,6 +63,13 @@ CREATE TRIGGER IF NOT EXISTS msgs_ad AFTER DELETE ON msgs BEGIN
 CREATE TABLE IF NOT EXISTS chat_meta(
   chat_id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '', contact INTEGER NOT NULL DEFAULT 0,
   updated REAL NOT NULL DEFAULT 0, sig TEXT NOT NULL DEFAULT '');
+
+CREATE TABLE IF NOT EXISTS tl(
+  id INTEGER PRIMARY KEY, level INTEGER NOT NULL, ord REAL NOT NULL, ts0 REAL NOT NULL, ts1 REAL NOT NULL, n INTEGER NOT NULL DEFAULT 1,
+  text TEXT NOT NULL, parent INTEGER, a INTEGER, b INTEGER, chat_id TEXT, i0 INTEGER, i1 INTEGER);
+CREATE INDEX IF NOT EXISTS tl_top ON tl(parent, ord);
+CREATE INDEX IF NOT EXISTS tl_chat ON tl(chat_id);
+CREATE TABLE IF NOT EXISTS tl_done(chat_id TEXT PRIMARY KEY, upto INTEGER NOT NULL);
 """
 
 
@@ -172,6 +179,11 @@ def drop_chat(chat_id: str) -> None:
         db.execute("DELETE FROM chat_meta WHERE chat_id=?", (chat_id,))
         db.execute("UPDATE facts SET source_chat=NULL WHERE source_chat=?", (chat_id,))
         db.commit()
+    try:
+        from . import timeline
+        timeline.forget_chat(chat_id)
+    except Exception:
+        pass
 
 
 def reindex() -> int:
@@ -518,7 +530,12 @@ async def context(chat_id: str, history: list[dict]) -> str:
     related = search_facts(query, 6, qvec, exclude={f["id"] for f in core}) if query else []
     excerpts = search_messages(query, 5, exclude_chat=chat_id, per_chat=2) if query else []
     recent = recent_summaries(chat_id)
-    if not (core or related or excerpts or recent):
+    try:
+        from . import timeline
+        history_view = timeline.view()
+    except Exception:
+        history_view = []  # the long view is a bonus: never stop a reply for it
+    if not (core or related or excerpts or recent or history_view):
         return ""
     _touch([f["id"] for f in related])
     lines = [GUIDE, ""]
@@ -531,6 +548,10 @@ async def context(chat_id: str, history: list[dict]) -> str:
         lines += ["What you know about the user:"] + [fact_line(f) for f in core] + [""]
     if related:
         lines += ["Possibly relevant memories:"] + [fact_line(f) for f in related] + [""]
+    if history_view:
+        lines += ["Everything that has happened between you and the user, oldest first. Recent days are detailed and older stretches are "
+                  "condensed, but nothing is forgotten: call zoom with an id like [#12] to open a line into what it covers, down to the "
+                  "original exchange.", ""] + history_view + [""]
     if recent:
         lines += ["Recent conversations (newest first):"]
         lines += [f"- {_day(c['updated'])}, \"{_snippet(c['title'], 50)}\" [chat {c['chat_id']}]: {_snippet(c['summary'], 260)}" for c in recent] + [""]
