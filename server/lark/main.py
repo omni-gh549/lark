@@ -29,6 +29,7 @@ async def lifespan(_app):
     yield
     poller.cancel()
     backfill.cancel()
+    await asyncio.gather(poller, backfill, return_exceptions=True)  # let them finish cancelling before the server exits
 
 
 async def _name_old_chats():

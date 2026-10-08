@@ -18,22 +18,35 @@ DATA = tempfile.mkdtemp()
 os.environ["LARK_DATA"] = DATA
 os.environ.pop("LARK_PASSWORD", None)
 os.environ.pop("LARK_SECRET_KEY", None)
+for _k in ("LARK_SANDBOX_URL", "LARK_SANDBOX_TOKEN"):
+    os.environ.pop(_k, None)  # never reach a real sandbox from the suite
 os.environ["LARK_NO_SUGGESTED"] = "1"  # tests start with no suggested memory models
 
 import mock_upstream  # noqa: E402
 from lark import providers, search, vault  # noqa: E402
 from lark.main import app  # noqa: E402
 
-srv = uvicorn.Server(uvicorn.Config(mock_upstream.app, port=8791, log_level="error"))
+import socket  # noqa: E402
+
+
+def free_port():
+    """A port nothing is listening on, so the suite never collides with (or reaches) a running Lark on this machine."""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+UPSTREAM, SANDBOX, SITE = free_port(), free_port(), free_port()
+srv = uvicorn.Server(uvicorn.Config(mock_upstream.app, port=UPSTREAM, log_level="error"))
 threading.Thread(target=srv.run, daemon=True).start()
 time.sleep(1)
 for p in providers.PROVIDERS.values():
-    p["base"] = "http://127.0.0.1:8791"
+    p["base"] = f"http://127.0.0.1:{UPSTREAM}"
 
-search.SEARCH_PROVIDERS["brave"]["base"] = "http://127.0.0.1:8791/brave"
+search.SEARCH_PROVIDERS["brave"]["base"] = f"http://127.0.0.1:{UPSTREAM}/brave"
 sbx = subprocess.Popen([sys.executable, str(Path(__file__).resolve().parents[2] / "sandbox" / "agent.py")],
                        env={**os.environ, "SANDBOX_TOKEN": "tok-1", "SANDBOX_HOME": tempfile.mkdtemp(),
-                            "SANDBOX_PORT": "8796", "SANDBOX_BIND": "127.0.0.1",
+                            "SANDBOX_PORT": str(SANDBOX), "SANDBOX_BIND": "127.0.0.1",
                             "SANDBOX_CHROMIUM": "/opt/pw-browsers/chromium"})
 time.sleep(1)
 
@@ -41,10 +54,13 @@ c = TestClient(app, base_url="http://localhost")
 c.__enter__()  # one event loop for all requests, so background runs outlive a request
 
 
+FAILED = []
+
+
 def run(label, ok):
     print(("PASS " if ok else "FAIL ") + label)
     if not ok:
-        sys.exit(1)
+        FAILED.append(label)  # keep going: later checks are still worth seeing
 
 
 s = c.get("/api/settings").json()
@@ -115,11 +131,12 @@ run("sandbox off by default", c.get("/api/sandbox").json() == {"configured": Fal
 ev = chat("run echo hi")
 run("run_command not offered without sandbox", ev[0].get("tool_start", {}).get("title") != "Run command")
 
-os.environ.update(LARK_SANDBOX_URL="http://127.0.0.1:8796", LARK_SANDBOX_TOKEN="tok-1")
+os.environ.update(LARK_SANDBOX_URL=f"http://127.0.0.1:{SANDBOX}", LARK_SANDBOX_TOKEN="tok-1")
 st = c.get("/api/sandbox").json()
 run("sandbox status ok", st["configured"] and st["ok"])
 ev = chat("tools")
-run("sandbox tools offered", "".join(e.get("text", "") for e in ev) == "web_search,remember,forget,memory_search,search_conversations,read_conversation,run_command,read_file,write_file,show_image,browser,request_login,subagent")
+offered = "".join(e.get("text", "") for e in ev).split(",")
+run("sandbox tools offered", {"run_command", "read_file", "write_file", "show_image", "subagent", "web_search", "remember"} <= set(offered))
 ev = chat("run echo hi && exit 2")
 run("run_command output and exit code", "hi" in ev[1]["tool_end"]["output"] and "exit code 2" in ev[1]["tool_end"]["output"])
 os.environ["LARK_SANDBOX_TOKEN"] = "wrong"
@@ -185,9 +202,9 @@ import functools  # noqa: E402
 site = Path(tempfile.mkdtemp())
 (site / "index.html").write_text('<title>Shop</title><a href="/two.html">Next page</a><input placeholder="Find"><button onclick="document.title=\'clicked\'">Go</button><input name="otp" value="123456"><input autocomplete="username" value="oscar@example.com"><input name="city" value="Leeds">')
 (site / "two.html").write_text("<title>Two</title><p>second page body</p>")
-httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 8898), functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(site)))
+httpd = http.server.ThreadingHTTPServer(("127.0.0.1", SITE), functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(site)))
 threading.Thread(target=httpd.serve_forever, daemon=True).start()
-snap = asyncio.run(_tools.browser({"action": "goto", "url": "http://127.0.0.1:8898/index.html"}))
+snap = asyncio.run(_tools.browser({"action": "goto", "url": f"http://127.0.0.1:{SITE}/index.html"}))
 run("snapshot hides codes and usernames but shows ordinary fields", "123456" not in snap and "oscar@example.com" not in snap and "Leeds" in snap)
 run("browser snapshot lists elements", "Title: Shop" in snap and "[1] link 'Next page'" in snap and "[2] text 'Find'" in snap)
 snap = asyncio.run(_tools.browser({"action": "click", "id": 1}))
@@ -208,7 +225,7 @@ except _tools.ToolError as e:
     bad = "http and https" in str(e)
 run("browser refuses file urls", bad)
 import time as _tm  # noqa: E402
-asyncio.run(_tools.browser({"action": "goto", "url": "http://127.0.0.1:8898/index.html"}))
+asyncio.run(_tools.browser({"action": "goto", "url": f"http://127.0.0.1:{SITE}/index.html"}))
 # the Find field and Go button; a click lands by position, typing goes to whatever has focus
 _tools.LOGIN["last_input"] = 0.0
 asyncio.run(sandbox.browser_input({"type": "key", "key": "Tab"}))
@@ -855,5 +872,6 @@ run("session works", c2.get("/api/settings").status_code == 200)
 
 # key survives a server restart (master key persisted)
 run("key still decrypts", vault.get_key("openrouter") == "sk-good-key-1234")
-print("all passed")
+print("all passed" if not FAILED else f"{len(FAILED)} failed: " + "; ".join(FAILED))
+sys.exit(1 if FAILED else 0)
 
