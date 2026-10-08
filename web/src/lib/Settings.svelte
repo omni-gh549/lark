@@ -121,6 +121,14 @@
     }
   }
 
+  async function setTitleModel(value) {
+    try {
+      app.settings = await api("/api/settings", { method: "PUT", body: { title_model: value } });
+    } catch {
+      /* the field keeps what was typed; try again */
+    }
+  }
+
   async function setUi(on) {
     try {
       app.settings = await api("/api/settings", { method: "PUT", body: { generative_ui: on } });
@@ -267,6 +275,16 @@
             {#each models[s.provider] ?? [] as id}<option value={id}></option>{/each}
           </datalist>
           <p class="status {modelNote[s.provider]?.kind ?? ''}">{modelNote[s.provider]?.text ?? ""}</p>
+        </div>
+        <div class="row">
+          <label class="row-title" for="tmodel">Chat titles model (optional)</label>
+          <div class="field">
+            <input id="tmodel" value={s.title_model ?? ""} placeholder="A cheap model that names your chats, e.g. qwen/qwen3.7-flash" autocomplete="off" spellcheck="false"
+              onchange={(e) => setTitleModel(e.currentTarget.value)} />
+          </div>
+          <p class="meta" style="margin:0">
+            Names each chat after its first reply so your history is easy to scan. Defaults to a cheap one on OpenRouter; clear it to use your chat model.
+          </p>
         </div>
       </div>
     </div>

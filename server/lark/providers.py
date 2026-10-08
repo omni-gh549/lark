@@ -80,14 +80,14 @@ def friendly(status: int | None, detail: str = "") -> str:
     return f"{text} ({detail})" if detail and status not in (429,) and not (status and status >= 500) else text
 
 
-async def stream_round(name: str, key: str, model: str, messages: list[dict], tools: list[dict] | None = None) -> AsyncIterator[dict]:
+async def stream_round(name: str, key: str, model: str, messages: list[dict], tools: list[dict] | None = None, extra: dict | None = None) -> AsyncIterator[dict]:
     """One model call. Yields {"text"} chunks, then {"tool_calls": [...]} if the model asked for tools,
     then {"done": True}; or {"error": str}. Transient failures before any output are retried quietly."""
     last = {"error": friendly(None)}
     for attempt in range(RETRIES):
         spoke = False
         retry = False
-        async for ev in _once(name, key, model, messages, tools):
+        async for ev in _once(name, key, model, messages, tools, extra):
             if "error" in ev:
                 last = ev
                 retry = not spoke and ev.get("transient", False)
@@ -102,8 +102,8 @@ async def stream_round(name: str, key: str, model: str, messages: list[dict], to
     yield {"error": last["error"]}
 
 
-async def _once(name: str, key: str, model: str, messages: list[dict], tools: list[dict] | None):
-    body = {"model": model, "messages": messages, "stream": True}
+async def _once(name: str, key: str, model: str, messages: list[dict], tools: list[dict] | None, extra: dict | None = None):
+    body = {"model": model, "messages": messages, "stream": True, **(extra or {})}
     if tools:
         body["tools"] = tools
     calls: dict[int, dict] = {}

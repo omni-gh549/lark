@@ -719,7 +719,7 @@ for _ in range(80):
         break
 facts = c.get("/api/memory").json()["facts"]
 miso = [f for f in facts if "Miso" in f["text"]]
-run("the learner adds a memory with its source chat", miso and miso[0]["source_chat"] == "memchat-0004" and miso[0]["source_title"].startswith("my cat"))
+run("the learner adds a memory with its source chat", miso and miso[0]["source_chat"] == "memchat-0004" and miso[0]["source_title"].lower().startswith("my cat"))
 run("the learner writes a chat summary", memory.summary_of("memchat-0004").startswith("Talked about: my cat"))
 
 c.post("/api/chats/memchat-0005/send", json={"content": "my sister moved, sysdump"})
@@ -788,6 +788,50 @@ run("forget everything", c.delete("/api/memory?confirm=all").json()["deleted"] >
 for i in range(2, 8):
     c.delete(f"/api/chats/memchat-000{i}")
 
+# --- chat titles ---
+from lark import chats as _chats, titles as _titles
+run("title cleaning", _titles.clean('"Rosa\'s dinner with Sam, Friday."') == "Rosa's dinner with Sam, Friday"
+    and _titles.clean("Title: Glencoe packing list\nextra") == "Glencoe packing list"
+    and _titles.clean("New chat") == "" and _titles.clean("") == ""
+    and _titles.clean("one two three four five six seven eight") == "one two three four five six")
+
+
+def titled(cid, text, want=None, secs=8):
+    c.post(f"/api/chats/{cid}/send", json={"content": text})
+    wait_idle(cid)
+    for _ in range(secs * 10):
+        time.sleep(0.1)
+        d = _chats.load(cid)
+        if d and d.get("titled") and (want is None or d["title"] == want):
+            return d
+    return _chats.load(cid)
+
+
+d = titled("title-0001", "plan the glencoe walk for saturday")
+run("a chat gets a written title after the first reply", d["title"] == "Plan The Glencoe" and d["titled"]["users"] == 1)
+c.put("/api/chats/title-0001", json={"messages": d["messages"]})
+run("a saved chat keeps its written title", _chats.load("title-0001")["title"] == "Plan The Glencoe")
+c.post("/api/chats/title-0002/send", json={"content": "hi"})
+wait_idle("title-0002")
+time.sleep(1)
+d = _chats.load("title-0002")
+run("a greeting stays untitled", not d.get("titled") and d["title"] == "hi")
+d = titled("title-0002", "book a table at rosa for friday")
+run("the title comes after a real topic shows up", d["title"] == "Book A Table" and d["titled"]["users"] == 2)
+for word in ("second", "third"):
+    titled("title-0001", f"and {word} thing", want=None, secs=1)
+d = _chats.load("title-0001")
+run("no re-title before the fourth message", d["title"] == "Plan The Glencoe" and not d["titled"]["again"])
+d = titled("title-0001", "everything shifted now", want="Moved on entirely")
+run("the title is checked once more after a few messages", d["title"] == "Moved on entirely" and d["titled"]["again"])
+titled("title-0001", "and one more", want=None, secs=1)
+run("a title is rewritten at most once", _chats.load("title-0001")["title"] == "Moved on entirely")
+c.put("/api/settings", json={"title_model": "qwen/qwen3.7-flash"})
+run("title model is a setting", c.get("/api/settings").json()["title_model"] == "qwen/qwen3.7-flash")
+c.put("/api/settings", json={"title_model": ""})
+c.delete("/api/chats/title-0001")
+c.delete("/api/chats/title-0002")
+
 c.delete("/api/keys/gateway")
 run("delete key", c.get("/api/settings").json()["providers"]["gateway"]["key_hint"] is None)
 
@@ -812,3 +856,4 @@ run("session works", c2.get("/api/settings").status_code == 200)
 # key survives a server restart (master key persisted)
 run("key still decrypts", vault.get_key("openrouter") == "sk-good-key-1234")
 print("all passed")
+

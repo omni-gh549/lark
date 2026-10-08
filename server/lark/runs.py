@@ -11,7 +11,7 @@ import os
 import tempfile
 import time
 
-from . import agent, chats, health, memory, sandbox, vault
+from . import agent, chats, health, memory, sandbox, titles, vault
 
 log = logging.getLogger("lark")
 
@@ -248,6 +248,7 @@ async def _execute(run: Run, name: str, key: str, model: str, history: list[dict
                     health.record("run", "chat too large to save")
                     chats.save(run.chat_id, messages[-60:], error=error)
                 if not error and not any("stopped" in e for e in run.events):
+                    asyncio.ensure_future(titles.name_chat(run.chat_id, name, key, model))
                     asyncio.ensure_future(memory.learn(run.chat_id, name, key, model))
                 if run.queued and not run.user_stop and history_builder:
                     follow = history_builder(messages)

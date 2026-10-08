@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import agent, auth, chats, files, health, memory, providers, runs, sandbox, search, telegram, tools, vault
+from . import agent, auth, chats, files, health, memory, providers, runs, sandbox, search, telegram, titles, tools, vault
 
 KEY_NAMES = set(providers.PROVIDERS) | set(search.SEARCH_PROVIDERS) | {"telegram"}
 DIST = Path(os.environ.get("LARK_DIST", Path(__file__).resolve().parents[2] / "web" / "dist"))
@@ -25,8 +25,25 @@ async def lifespan(_app):
         await runs.resume_all()  # replies cut off by the last restart carry on
     except Exception as e:
         health.record("run", f"resume failed: {type(e).__name__}")
+    backfill = asyncio.ensure_future(_name_old_chats())
     yield
     poller.cancel()
+    backfill.cancel()
+
+
+async def _name_old_chats():
+    """Once, the first time there's a key: give chats saved before titles existed a proper name. Never raises."""
+    try:
+        flag = vault.DATA_DIR / "titles-backfilled"
+        s = vault.load()
+        key = vault.get_key(s["provider"])
+        model = s["models"].get(s["provider"], "")
+        if flag.exists() or not key or not model:
+            return
+        await titles.backfill(s["provider"], key, model)
+        flag.write_text("done\n")
+    except Exception as e:
+        health.record("titles", f"could not name old chats: {type(e).__name__}")
 
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
@@ -90,6 +107,7 @@ def view_settings() -> dict:
         "browser_cookies": s["browser_cookies"],
         "generative_ui": s["generative_ui"],
         "memory": {"use": s["memory_use"], "learn": s["memory_learn"], "embedding_model": s["embedding_model"], "memory_model": s["memory_model"], **memory.stats()},
+        "title_model": s["title_model"],
         "auth": bool(auth.password()),
         "sandbox": sandbox.configured(),
         "providers": {
@@ -119,6 +137,7 @@ class SettingsIn(BaseModel):
     memory_learn: bool | None = None
     embedding_model: str | None = Field(default=None, max_length=200)
     memory_model: str | None = Field(default=None, max_length=200)
+    title_model: str | None = Field(default=None, max_length=200)
 
 
 @app.put("/api/settings")
@@ -133,7 +152,7 @@ async def put_settings(body: SettingsIn):
         memory.reset_embeddings()  # vectors from another model aren't comparable
         memory.schedule_embed()
     vault.update(body.provider, {k: v.strip() for k, v in (body.models or {}).items()}, body.search, body.browser_cookies,
-                 body.memory_use, body.memory_learn, body.embedding_model, body.memory_model, body.generative_ui)
+                 body.memory_use, body.memory_learn, body.embedding_model, body.memory_model, body.generative_ui, body.title_model)
     return view_settings()
 
 

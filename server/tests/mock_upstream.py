@@ -80,6 +80,15 @@ async def chat(request: Request):
             yield "data: " + json.dumps({"choices": [{"delta": {"content": out}}]}) + "\n\n"
             yield "data: [DONE]\n\n"
             return
+        if "You name chats" in system:  # chat titles
+            users = [l.removeprefix("User: ") for l in last.split("\n") if l.startswith("User: ")]
+            said = users[0] if not users[0].lower().startswith("hi") or len(users) == 1 else users[-1]
+            out = "New chat" if said.lower().startswith("hi") else '"' + " ".join(said.split()[:3]).title() + '."'
+            if "Current title:" in last and "shifted" in last:
+                out = "Moved on entirely"
+            yield "data: " + json.dumps({"choices": [{"delta": {"content": out}}]}) + "\n\n"
+            yield "data: [DONE]\n\n"
+            return
         if "decide whether" in system and "needs to hear about it" in system:  # contact triage
             payload = json.loads(last)
             said = payload["their_message"].lower()
