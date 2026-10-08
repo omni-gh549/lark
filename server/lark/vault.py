@@ -17,6 +17,7 @@ DEFAULTS = {
     "browser_cookies": False,  # keep the sandbox browser's cookies and logins between sessions
     "memory_use": True,  # remember across chats: the notes in the prompt and the memory tools
     "memory_learn": True,  # learn from conversations automatically, after each reply
+    "generative_ui": True,  # let the web chat show tables, plans and checklists as small interfaces (OpenUI)
     "memory_model": "",  # optional cheaper model for the learning pass (empty = the chat model)
     "embedding_model": "",  # optional: match memories by meaning (needs an embeddings model on the chosen provider)
     "keys": {},
@@ -57,6 +58,7 @@ def load() -> dict:
         "models": {**DEFAULTS["models"], **data.get("models", {})},
         "search": data.get("search", DEFAULTS["search"]),
         "browser_cookies": bool(data.get("browser_cookies", False)),
+        "generative_ui": bool(data.get("generative_ui", True)),
         "memory_use": bool(data.get("memory_use", True)),
         "memory_learn": bool(data.get("memory_learn", True)),
         "memory_model": str(data.get("memory_model", DEFAULTS["memory_model"])),
@@ -74,8 +76,10 @@ def _save(data: dict):
     os.replace(tmp, SETTINGS)
 
 
-def update(provider=None, models=None, search=None, browser_cookies=None, memory_use=None, memory_learn=None, embedding_model=None, memory_model=None):
+def update(provider=None, models=None, search=None, browser_cookies=None, memory_use=None, memory_learn=None, embedding_model=None, memory_model=None, generative_ui=None):
     data = load()
+    if generative_ui is not None:
+        data["generative_ui"] = bool(generative_ui)
     if browser_cookies is not None:
         data["browser_cookies"] = bool(browser_cookies)
     if memory_use is not None:

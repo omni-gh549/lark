@@ -7,7 +7,7 @@ assistant message is written into the saved chat.
 import asyncio
 import json
 
-from . import agent, chats, memory, sandbox
+from . import agent, chats, memory, sandbox, vault
 
 _runs: dict[str, "Run"] = {}
 
@@ -105,6 +105,8 @@ async def _execute(run: Run, name: str, key: str, model: str, history: list[dict
                 pass  # a problem with contacts must never stop a reply
         if run.chat_id == "telegram-owner":
             notes = f"{agent.TELEGRAM_PROMPT}\n\n{notes}".strip()
+        elif not memory.is_contact_chat(run.chat_id) and vault.load()["generative_ui"]:
+            notes = f"{notes}\n\n{agent.ui_prompt()}".strip()  # the web chat can draw tables, plans and checklists
         async for ev in agent.run(name, key, model, history, notes):
             if "error" in ev:
                 error = ev["error"]

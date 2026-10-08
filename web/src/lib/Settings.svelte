@@ -121,6 +121,14 @@
     }
   }
 
+  async function setUi(on) {
+    try {
+      app.settings = await api("/api/settings", { method: "PUT", body: { generative_ui: on } });
+    } catch {
+      /* the switch just stays where it was */
+    }
+  }
+
   async function clearBrowser() {
     try {
       await api("/api/browser/clear", { method: "POST" });
@@ -319,6 +327,18 @@
             </div>
             <p class="status {sandboxNote.kind}">{sandboxNote.text}</p>
           {/if}
+        </div>
+        <div class="row">
+          <div class="row-head">
+            <span class="row-title">Interfaces in replies</span>
+            <div class="seg" role="group" aria-label="Interfaces in replies">
+              <button aria-pressed={!s.generative_ui} onclick={() => setUi(false)}>Off</button>
+              <button aria-pressed={s.generative_ui} onclick={() => setUi(true)}>On</button>
+            </div>
+          </div>
+          <p class="meta" style="margin:0">
+            When a table, plan or checklist is clearer than text, Lark can show it as a small interface in the web chat (OpenUI). Everything else stays plain text, and Telegram always gets text.
+          </p>
         </div>
         {#if s.sandbox}
           <div class="row">

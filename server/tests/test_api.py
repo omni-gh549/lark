@@ -607,6 +607,17 @@ for _ in range(50):
         break
 sysmsg = c.get("/api/chats/memchat-0002").json()["messages"][-1]["content"]
 run("pinned memory is in the prompt", "Maya lives in Lisbon" in sysmsg and f"[#{fid}]" in sysmsg)
+run("web chat prompt carries the interface guidance, text first", "almost always the right choice" in sysmsg and "Timeline(" in sysmsg and "tagged openui" in sysmsg)
+run("interfaces are on by default", c.get("/api/settings").json()["generative_ui"] is True)
+c.put("/api/settings", json={"generative_ui": False})
+c.post("/api/chats/uichat-0001/send", json={"content": "sysdump"})
+for _ in range(50):
+    time.sleep(0.1)
+    if not c.get("/api/chats/uichat-0001").json()["running"]:
+        break
+off = c.get("/api/chats/uichat-0001").json()["messages"][-1]["content"]
+run("switching interfaces off removes the guidance", "Timeline(" not in off and c.get("/api/settings").json()["generative_ui"] is False)
+c.put("/api/settings", json={"generative_ui": True})
 
 c.post("/api/chats/memchat-0003/send", json={"content": "when are we doing the cheese tour again? sysdump"})
 for _ in range(50):

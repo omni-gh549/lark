@@ -84,6 +84,7 @@ def view_settings() -> dict:
         "models": s["models"],
         "search": s["search"],
         "browser_cookies": s["browser_cookies"],
+        "generative_ui": s["generative_ui"],
         "memory": {"use": s["memory_use"], "learn": s["memory_learn"], "embedding_model": s["embedding_model"], "memory_model": s["memory_model"], **memory.stats()},
         "auth": bool(auth.password()),
         "sandbox": sandbox.configured(),
@@ -109,6 +110,7 @@ class SettingsIn(BaseModel):
     models: dict[str, str] | None = None
     search: str | None = None
     browser_cookies: bool | None = None
+    generative_ui: bool | None = None
     memory_use: bool | None = None
     memory_learn: bool | None = None
     embedding_model: str | None = Field(default=None, max_length=200)
@@ -127,7 +129,7 @@ async def put_settings(body: SettingsIn):
         memory.reset_embeddings()  # vectors from another model aren't comparable
         memory.schedule_embed()
     vault.update(body.provider, {k: v.strip() for k, v in (body.models or {}).items()}, body.search, body.browser_cookies,
-                 body.memory_use, body.memory_learn, body.embedding_model, body.memory_model)
+                 body.memory_use, body.memory_learn, body.embedding_model, body.memory_model, body.generative_ui)
     return view_settings()
 
 

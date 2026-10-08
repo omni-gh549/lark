@@ -2,7 +2,8 @@
   import { onMount, tick } from "svelte";
   import { chat, init, send, stop } from "./chat.svelte.js";
   import { configured } from "./store.svelte.js";
-  import { render } from "./markdown.js";
+  import { render, segments } from "./markdown.js";
+  import Block from "../openui/Block.svelte";
   import ToolStatus from "./ToolStatus.svelte";
   import ToolChip from "./ToolChip.svelte";
   import BrowserWindow from "./BrowserWindow.svelte";
@@ -108,7 +109,13 @@
         <div class="turn">
           {#each m.parts ?? [{ type: "text", text: m.content }] as p}
             {#if p.type === "text"}
-              {#if p.text}<div class="msg md">{@html render(p.text)}</div>{/if}
+              {#each p.text ? segments(p.text) : [] as s}
+                {#if s.type === "ui"}
+                  <Block source={s.text} open={s.open && live} onsend={(t) => !chat.busy && send(t, [])} />
+                {:else if s.text.trim()}
+                  <div class="msg md">{@html render(s.text)}</div>
+                {/if}
+              {/each}
             {:else if p.state !== "running"}
               <ToolChip part={p} />
               {#each p.images ?? [] as id}
