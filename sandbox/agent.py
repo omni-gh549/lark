@@ -338,20 +338,35 @@ class Browser:
             text = str(a["text"])
             target = None
             loose = re.compile(r"\s+".join(re.escape(w) for w in text.split()), re.I)
+            hidden = None  # a match that exists but isn't "visible" (virtualised lists, buttons in transitions)
             for attempt in range(6):  # banners and popups often appear a moment after the page does
                 for frame in page.frames:
-                    for loc in (frame.get_by_role("button", name=loose), frame.get_by_role("link", name=loose), frame.get_by_text(loose)):
+                    for loc in (frame.get_by_role("button", name=loose), frame.get_by_label(loose), frame.get_by_role("link", name=loose),
+                                frame.get_by_text(loose)):
                         try:
-                            if await loc.count() and await loc.first.is_visible():
-                                target = loc.first
-                                break
+                            for i in range(min(await loc.count(), 10)):
+                                cand = loc.nth(i)
+                                if await cand.is_visible():
+                                    target = cand
+                                    break
+                                hidden = hidden or cand
                         except Exception:
                             continue
+                        if target:
+                            break
                     if target:
                         break
                 if target:
                     break
+                if attempt >= 3 and hidden:
+                    break  # it is on the page: bring it into view below rather than wait for it to look visible
                 await page.wait_for_timeout(600)
+            if not target and hidden:
+                try:
+                    await hidden.scroll_into_view_if_needed(timeout=2500)
+                    target = hidden
+                except Exception:
+                    pass
             if not target:
                 seen = []
                 for frame in page.frames[:6]:
@@ -361,6 +376,10 @@ class Browser:
                         pass
                 hint = (" Visible buttons and links: " + ", ".join(repr(t) for t in list(dict.fromkeys(seen))[:15])) if seen else ""
                 raise ValueError(f"No visible button, link or text matching {text!r}.{hint}")
+            try:
+                await target.scroll_into_view_if_needed(timeout=2500)  # below the fold: the mouse can only click what's on screen
+            except Exception:
+                pass
             box = await target.bounding_box()
             if not box:
                 raise ValueError("That element has no position on screen.")

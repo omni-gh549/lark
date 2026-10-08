@@ -272,6 +272,8 @@ def view(budget: int = VIEW_BYTES) -> list[str]:
                 if n["level"] == 0:
                     continue
                 kids = [_node(db, n["a"]), _node(db, n["b"])]
+                if None in kids:
+                    continue  # a half that no longer exists: show the summary as it is
                 grown = size - len(_line(n)) - 1 + sum(len(_line(k)) + 1 for k in kids)
                 if grown <= budget:
                     items[pos:pos + 1] = kids
@@ -291,7 +293,7 @@ def zoom(node_id: int) -> str | None:
         if not n:
             return None
         if n["level"] > 0:
-            return "\n".join(_line(_node(db, k)) for k in (n["a"], n["b"]))
+            return "\n".join(_line(k) for k in (_node(db, n["a"]), _node(db, n["b"])) if k)
     doc = chats.load(n["chat_id"]) if n["chat_id"] else None
     if doc and n["i0"] is not None:
         msgs = doc["messages"][n["i0"]:n["i1"] + 1]
