@@ -93,16 +93,17 @@ async def _subagent(name: str, key: str, model: str, task: str, steps: list[str]
     return answer.strip() or "The subagent returned nothing."
 
 
-async def run(name: str, key: str, model: str, history: list[dict], memory: str = ""):
+async def run(name: str, key: str, model: str, history: list[dict], memory: str = "", steer=None):
     """Yields UI events: text, tool_start, tool_end, error, done. `memory` is the notes block for the system prompt."""
     available = await tools.available()
     if available:
         available = available + [SUBAGENT]
-    async for ev in loop(name, key, model, history, available, MAX_ROUNDS, extra=memory):
+    async for ev in loop(name, key, model, history, available, MAX_ROUNDS, extra=memory, steer=steer):
         yield ev
 
 
-async def loop(name, key, model, history, available, max_rounds, sub=False, system=None, extra=""):
+async def loop(name, key, model, history, available, max_rounds, sub=False, system=None, extra="", steer=None):
+    """`steer()` returns (and clears) messages the user sent while this ran; they join the conversation at the next step."""
     by_name = {t.name: t for t in available}
     specs = [t.spec() for t in available] or None
     messages = [{"role": "system", "content": (system or system_prompt(available, sub)) + (f"\n\n{extra}" if extra else "")}] + history
@@ -113,9 +114,12 @@ async def loop(name, key, model, history, available, max_rounds, sub=False, syst
     worked = False
     while max_rounds is None or rounds < max_rounds:
         await tools.wait_unpaused()
+        if steer and rounds:
+            messages.extend(steer())  # a step just finished: the next model call sees what the user added
         rounds += 1
         calls = None
         spoke = False
+        said = ""
         async for ev in providers.stream_round(name, key, model, messages, specs):
             if "tool_calls" in ev:
                 calls = ev["tool_calls"]
@@ -123,6 +127,7 @@ async def loop(name, key, model, history, available, max_rounds, sub=False, syst
                 pass
             else:
                 spoke = spoke or bool(ev.get("text"))
+                said += ev.get("text", "")
                 yield ev
                 if "error" in ev:
                     health.record("provider", ev["error"])
@@ -137,6 +142,13 @@ async def loop(name, key, model, history, available, max_rounds, sub=False, syst
             yield {"text": ("I finished that but didn't get a written answer back. Ask me for a summary if you'd like one." if worked
                             else "I didn't get an answer from the model. Send that again and I'll retry.")}
         if not calls:
+            late = steer() if steer else []
+            if late and spoke:
+                # the user added something while this answer was being written: finish it, then answer the addition
+                messages.append({"role": "assistant", "content": said})
+                messages.extend(late)
+                yield {"text": "\n\n"}
+                continue
             yield {"done": True}
             return
         worked = True

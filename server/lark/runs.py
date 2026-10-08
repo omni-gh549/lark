@@ -37,6 +37,7 @@ class Run:
         self.resumed = False
         self.skip = 0  # events that were replayed from before a restart (followers must not repeat them)
         self.attempts = 0
+        self.steer: list[dict] = []  # messages sent mid-run, waiting for the next step
         self._journaled = 0.0
 
     def push(self, ev: dict):
@@ -206,7 +207,7 @@ async def _execute(run: Run, name: str, key: str, model: str, history: list[dict
             notes = f"{agent.TELEGRAM_PROMPT}\n\n{notes}".strip()
         elif not memory.is_contact_chat(run.chat_id) and vault.load()["generative_ui"]:
             notes = f"{notes}\n\n{agent.ui_prompt()}".strip()  # the web chat can draw tables, plans and checklists
-        async for ev in agent.run(name, key, model, history, notes):
+        async for ev in agent.run(name, key, model, history, notes, steer=lambda: _take_steer(run)):
             if "error" in ev:
                 error = ev["error"]
             run.push(ev)
@@ -281,6 +282,19 @@ def start(chat_id: str, name: str, key: str, model: str, history: list[dict], at
     return run
 
 
+def _take_steer(run: Run) -> list[dict]:
+    """The mid-run messages not yet seen by the model, as conversation messages. They stop counting as queued."""
+    if not run.steer or not history_builder:
+        return []
+    taken, run.steer = run.steer, []
+    run.queued = max(0, run.queued - len(taken))
+    out = history_builder(taken)
+    for m in out:
+        if isinstance(m["content"], str):
+            m["content"] = "(Sent while you were working. Take it into account and carry on.)\n" + m["content"]
+    return out
+
+
 def queue(chat_id: str, user: dict) -> bool:
     """A message arrived while Lark was busy in this chat: save it now, answer it right after the current reply."""
     r = get(chat_id)
@@ -289,6 +303,7 @@ def queue(chat_id: str, user: dict) -> bool:
     doc = chats.load(chat_id) or {"messages": []}
     chats.save(chat_id, doc["messages"] + [user])
     r.queued += 1
+    r.steer.append(user)
     return True
 
 

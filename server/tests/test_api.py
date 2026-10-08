@@ -332,22 +332,23 @@ run("live reader gets all text", asyncio.run(_live_reader()) == "abcd")
 r = c.post("/api/chats/run-test-0001/send", json={"content": "run sleep 1; echo ran"})
 run("send starts a run", r.status_code == 200)
 r = c.post("/api/chats/run-test-0001/send", json={"content": "x"})
-run("a message sent while Lark is replying is queued, not refused", r.status_code == 200 and r.json().get("queued") is True)
+run("a message sent while Lark is replying is accepted, not refused", r.status_code == 200 and r.json().get("queued") is True)
 run("chat shows as running", c.get("/api/chats/run-test-0001").json()["running"] is True
     and c.get("/api/chats").json()["chats"][0]["running"] is True)
 ev = sse_events("/api/chats/run-test-0001/events")
 run("events replay from the start and end", ev[0].get("tool_start", {}).get("title") == "Run command" and ev[-1] == {"done": True})
 wait_idle("run-test-0001")
 doc = c.get("/api/chats/run-test-0001").json()
-run("finished reply saved with tool part, before the queued message", [m["role"] for m in doc["messages"]] == ["user", "assistant", "user", "assistant"]
-    and doc["messages"][1]["parts"][0]["state"] == "ok" and "ran" in doc["messages"][1]["parts"][0]["output"]
-    and doc["messages"][1]["content"].startswith("Tool said"))
-run("the queued message was answered next", doc["messages"][2]["content"] == "x" and doc["messages"][3]["content"] == "Echo: x")
+run("finished reply saved with tool part, after the steering message", [m["role"] for m in doc["messages"]] == ["user", "user", "assistant"]
+    and doc["messages"][2]["parts"][0]["state"] == "ok" and "ran" in doc["messages"][2]["parts"][0]["output"]
+    and doc["messages"][2]["content"].startswith("Echo:"))
+run("the steering message reached the model at the next step, in the same reply", doc["messages"][1]["content"] == "x"
+    and "Sent while you were working" in doc["messages"][2]["content"] and doc["messages"][2]["content"].rstrip().endswith("x"))
 run("no run left over", sse_events("/api/chats/run-test-0001/events") == [{"idle": True}])
 # a second client attaching late still gets everything
 c.post("/api/chats/run-test-0001/send", json={"content": "hello"})
 wait_idle("run-test-0001")
-run("history includes earlier turns", len(c.get("/api/chats/run-test-0001").json()["messages"]) == 6)
+run("history includes earlier turns", len(c.get("/api/chats/run-test-0001").json()["messages"]) == 5)
 # stop keeps what was produced
 c.post("/api/chats/run-test-0002/send", json={"content": "run sleep 30"})
 time.sleep(0.5)
@@ -718,7 +719,7 @@ while _runs.get("telegram-owner"):
     time.sleep(0.1)
 time.sleep(0.7)
 texts = [m["text"] for m in msgs(111)[n_before:]]
-run("a second Telegram message while working is answered, not refused", not any("Still working" in t for t in texts) and any("Echo: and another thing" in t for t in texts))
+run("a second Telegram message while working is answered, not refused", not any("Still working" in t for t in texts) and any("and another thing" in t for t in texts))
 run("problems are counted without content", isinstance(_health.summary()["last_hour"], dict))
 
 c.post("/api/chats/memchat-0003/send", json={"content": "when are we doing the cheese tour again? sysdump"})
@@ -848,6 +849,21 @@ run("title model is a setting", c.get("/api/settings").json()["title_model"] == 
 c.put("/api/settings", json={"title_model": ""})
 c.delete("/api/chats/title-0001")
 c.delete("/api/chats/title-0002")
+
+# a message sent while the final answer is being written is answered right after it, in the same reply
+from lark import agent as _agent
+
+
+async def _late_steer():
+    pending = [[{"role": "user", "content": "extra"}]]
+    out = ""
+    async for ev in _agent.loop("openrouter", "sk-good-key-1234", "m", [{"role": "user", "content": "hello"}], [], 5, steer=lambda: pending.pop() if pending else []):
+        out += ev.get("text", "")
+    return out
+
+
+late = asyncio.run(_late_steer())
+run("a message during the final answer is answered right after it", "Echo: hello" in late and late.index("Echo: hello") < late.index("Echo: extra"))
 
 c.delete("/api/keys/gateway")
 run("delete key", c.get("/api/settings").json()["providers"]["gateway"]["key_hint"] is None)
