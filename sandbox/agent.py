@@ -99,6 +99,7 @@ FRAME_BUTTONS_JS = """() => Array.from(document.querySelectorAll('button,a[href]
   .filter(Boolean).slice(0, 12)"""
 
 
+_NAVIGATED = re.compile(r"context was destroyed|frame was detached|ERR_ABORTED|navigat|Target closed|Execution context", re.I)
 NAV_RACE = re.compile(r"context was destroyed|frame was detached|ERR_ABORTED|navigat|Target closed|Execution context", re.I)
 
 
@@ -247,6 +248,27 @@ class Browser:
         return "\n".join(lines)
 
     async def _act(self, a: dict) -> dict:
+        """One browser action. A click, key press or typing that navigates destroys the page's script context, and
+        Playwright reports that as a failure although the action went through. Repeating it would add things twice,
+        so wait for the new page and describe it instead."""
+        try:
+            return await self._act_raw(a)
+        except Exception as e:
+            if a.get("action") not in ("click", "type", "press") or not _NAVIGATED.search(str(e)):
+                raise
+        last = None
+        for wait in (0.8, 1.5, 2.5):
+            await asyncio.sleep(wait)
+            try:
+                return {"snapshot": await self._snapshot()}
+            except Exception as e:
+                last = e
+                if not _NAVIGATED.search(str(e)):
+                    break
+        raise last
+
+
+    async def _act_raw(self, a: dict) -> dict:
         await self._ensure()
         page = self.page
         action = a.get("action")
