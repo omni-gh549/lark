@@ -99,6 +99,9 @@ FRAME_BUTTONS_JS = """() => Array.from(document.querySelectorAll('button,a[href]
   .filter(Boolean).slice(0, 12)"""
 
 
+NAV_RACE = re.compile(r"context was destroyed|frame was detached|ERR_ABORTED|navigat|Target closed|Execution context", re.I)
+
+
 class Browser:
     """One headless Chromium page, driven by element numbers. It lives on its own asyncio loop so a screenshot
     for the live view can be taken while an action (a slow page load, say) is still running."""
@@ -114,6 +117,8 @@ class Browser:
         self.ua = None
         self.hold = False  # a person is signing in: don't close the browser for being idle
         self.cursor = None  # where the last click or typing landed, as fractions of the viewport, for the live view
+        self.els: dict = {}  # element number -> (kind, label, href) from the latest snapshot, to survive renumbering
+        self.last_url = ""  # so a person taking over a closed browser can get the page back
 
     async def _make_lock(self):
         return asyncio.Lock()
@@ -191,17 +196,30 @@ class Browser:
         if self.page and not self.hold and time.time() - self.last_used > IDLE_CLOSE:
             asyncio.run_coroutine_threadsafe(self._close(), self.loop)
 
+    async def _read_page(self) -> dict:
+        """The page as numbered elements. A page that is navigating destroys the script's context, so wait and read again."""
+        page = self.page
+        for attempt in range(4):
+            try:
+                await page.wait_for_load_state("domcontentloaded", timeout=5000)
+                await page.wait_for_load_state("networkidle", timeout=1200)
+            except Exception:
+                pass
+            try:
+                return await page.evaluate(SNAPSHOT_JS)
+            except Exception as e:
+                if attempt == 3 or not NAV_RACE.search(str(e)):
+                    raise
+                await page.wait_for_timeout(700 * (attempt + 1))
+
     async def _snapshot(self) -> str:
         page = self.page
-        try:
-            await page.wait_for_load_state("domcontentloaded", timeout=5000)
-            await page.wait_for_load_state("networkidle", timeout=1200)
-        except Exception:
-            pass
-        d = await page.evaluate(SNAPSHOT_JS)
+        d = await self._read_page()
         if len(d["text"].strip()) < 60 and not d["els"]:
             await page.wait_for_timeout(2000)  # script-heavy pages can still be drawing themselves
-            d = await page.evaluate(SNAPSHOT_JS)
+            d = await self._read_page()
+        self.els = {e["n"]: (e["kind"], e["label"], e["href"]) for e in d["els"]}
+        self.last_url = d["url"] or self.last_url
         lines = [f"URL: {d['url']}", f"Title: {d['title']}",
                  f"Scroll: {d['y']}/{max(d['height'] - d['view'], 0)}", "", "Page text:", d["text"].strip() or "(no text)", "",
                  "Interactive elements:"]
@@ -247,9 +265,10 @@ class Browser:
         elif action == "click" and (a.get("text") or a.get("x") is not None) and a.get("id") is None:
             await self._click_visible(a)
         elif action in ("click", "type"):
-            target = page.locator(f'[data-lark="{int(a.get("id"))}"]').first
+            n = int(a.get("id"))
+            target = page.locator(f'[data-lark="{n}"]').first
             if await target.count() == 0:
-                raise ValueError("No element with that number. Use the numbers from the latest snapshot.")
+                target = await self._renumbered(n)
             await target.scroll_into_view_if_needed(timeout=5000)
             await self._point(target, action == "click")
             await asyncio.sleep(0.6)  # let the live view's cursor glide there before the page reacts
@@ -292,6 +311,23 @@ class Browser:
         out["snapshot"] = await self._snapshot()
         return out
 
+    async def _renumbered(self, n: int):
+        """The page changed since the snapshot and the numbers moved. Find the element the model meant by what it was
+        (its kind, label and link) in a fresh numbering; if it's gone, say so with the page as it is now."""
+        page = self.page
+        old = self.els.get(n)
+        d = await self._read_page()
+        fresh = {e["n"]: (e["kind"], e["label"], e["href"]) for e in d["els"]}
+        if old:
+            for m, sig in fresh.items():
+                if sig == old:
+                    return page.locator(f'[data-lark="{m}"]').first
+            for m, sig in fresh.items():  # same kind and label, link changed
+                if sig[:2] == old[:2]:
+                    return page.locator(f'[data-lark="{m}"]').first
+        self.els = fresh
+        raise ValueError("The page changed and that element is gone. Here is the page now, with new numbers:\n" + await self._snapshot())
+
     async def _click_visible(self, a: dict):
         """Click by visible text (searching every frame, so consent popups in iframes work) or by x, y pixels."""
         page = self.page
@@ -301,18 +337,30 @@ class Browser:
         else:
             text = str(a["text"])
             target = None
-            for frame in page.frames:
-                for loc in (frame.get_by_role("button", name=text), frame.get_by_role("link", name=text), frame.get_by_text(text)):
-                    try:
-                        if await loc.count() and await loc.first.is_visible():
-                            target = loc.first
-                            break
-                    except Exception:
-                        continue
+            loose = re.compile(r"\s+".join(re.escape(w) for w in text.split()), re.I)
+            for attempt in range(6):  # banners and popups often appear a moment after the page does
+                for frame in page.frames:
+                    for loc in (frame.get_by_role("button", name=loose), frame.get_by_role("link", name=loose), frame.get_by_text(loose)):
+                        try:
+                            if await loc.count() and await loc.first.is_visible():
+                                target = loc.first
+                                break
+                        except Exception:
+                            continue
+                    if target:
+                        break
                 if target:
                     break
+                await page.wait_for_timeout(600)
             if not target:
-                raise ValueError(f"No visible button, link or text matching {text!r}.")
+                seen = []
+                for frame in page.frames[:6]:
+                    try:
+                        seen += await frame.evaluate(FRAME_BUTTONS_JS)
+                    except Exception:
+                        pass
+                hint = (" Visible buttons and links: " + ", ".join(repr(t) for t in list(dict.fromkeys(seen))[:15])) if seen else ""
+                raise ValueError(f"No visible button, link or text matching {text!r}.{hint}")
             box = await target.bounding_box()
             if not box:
                 raise ValueError("That element has no position on screen.")
@@ -347,6 +395,9 @@ class Browser:
                     if a.get("action") in ("goto", "snapshot", "screenshot", "scroll", "back") and re.search(r"closed|crash|disconnected", str(e), re.I):
                         await self._close()  # the page died: start a fresh browser and try once more
                         out = await self._act(a)
+                    elif a.get("action") in ("goto", "snapshot", "screenshot", "scroll", "back") and NAV_RACE.search(str(e)):
+                        await asyncio.sleep(1.0)  # a navigation was in flight: let it land and try once more
+                        out = await self._act(a)
                     else:
                         raise
                 await self._save_state()
@@ -357,8 +408,11 @@ class Browser:
 
     async def _input(self, a: dict) -> dict:
         """Mouse and keyboard from a person taking over the live view. Positions are fractions of the page."""
-        if not self.page:
-            raise ValueError("No page is open.")
+        if not self.page or self.page.is_closed():
+            if not self.last_url:
+                raise ValueError("The browser is closed. Ask Lark to open a page.")
+            await self._ensure()  # it closed (idle, crashed): reopen where it was so the person's input still lands
+            await self.page.goto(self.last_url, wait_until="domcontentloaded", timeout=30000)
         page = self.page
         kind = a.get("type")
         size = page.viewport_size or {"width": 1280, "height": 800}

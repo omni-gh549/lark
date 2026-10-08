@@ -199,7 +199,7 @@ try:
     asyncio.run(_tools.browser({"action": "click", "id": 77}))
     bad = False
 except _tools.ToolError as e:
-    bad = "No element" in str(e)
+    bad = "element is gone" in str(e) and "Here is the page now" in str(e)
 run("browser reports a missing element", bad)
 try:
     asyncio.run(_tools.browser({"action": "goto", "url": "file:///etc/passwd"}))
@@ -314,21 +314,23 @@ run("live reader gets all text", asyncio.run(_live_reader()) == "abcd")
 # server-side runs
 r = c.post("/api/chats/run-test-0001/send", json={"content": "run sleep 1; echo ran"})
 run("send starts a run", r.status_code == 200)
-run("second send while running is refused", c.post("/api/chats/run-test-0001/send", json={"content": "x"}).status_code == 409)
+r = c.post("/api/chats/run-test-0001/send", json={"content": "x"})
+run("a message sent while Lark is replying is queued, not refused", r.status_code == 200 and r.json().get("queued") is True)
 run("chat shows as running", c.get("/api/chats/run-test-0001").json()["running"] is True
     and c.get("/api/chats").json()["chats"][0]["running"] is True)
 ev = sse_events("/api/chats/run-test-0001/events")
 run("events replay from the start and end", ev[0].get("tool_start", {}).get("title") == "Run command" and ev[-1] == {"done": True})
 wait_idle("run-test-0001")
 doc = c.get("/api/chats/run-test-0001").json()
-run("finished reply saved with tool part", [m["role"] for m in doc["messages"]] == ["user", "assistant"]
+run("finished reply saved with tool part, before the queued message", [m["role"] for m in doc["messages"]] == ["user", "assistant", "user", "assistant"]
     and doc["messages"][1]["parts"][0]["state"] == "ok" and "ran" in doc["messages"][1]["parts"][0]["output"]
     and doc["messages"][1]["content"].startswith("Tool said"))
+run("the queued message was answered next", doc["messages"][2]["content"] == "x" and doc["messages"][3]["content"] == "Echo: x")
 run("no run left over", sse_events("/api/chats/run-test-0001/events") == [{"idle": True}])
 # a second client attaching late still gets everything
 c.post("/api/chats/run-test-0001/send", json={"content": "hello"})
 wait_idle("run-test-0001")
-run("history includes earlier turns", len(c.get("/api/chats/run-test-0001").json()["messages"]) == 4)
+run("history includes earlier turns", len(c.get("/api/chats/run-test-0001").json()["messages"]) == 6)
 # stop keeps what was produced
 c.post("/api/chats/run-test-0002/send", json={"content": "run sleep 30"})
 time.sleep(0.5)
@@ -342,7 +344,7 @@ c.put("/api/settings", json={"provider": "gateway", "models": {"gateway": "x/y"}
 c.put("/api/keys/gateway", json={"key": "sk-bad-key-0000"})
 c.post("/api/chats/run-test-0003/send", json={"content": "hi"})
 wait_idle("run-test-0003")
-run("failed run keeps the user message and the error", c.get("/api/chats/run-test-0003").json()["error"] == "Invalid API key (401)")
+run("failed run keeps the user message and the error", c.get("/api/chats/run-test-0003").json()["error"].startswith("The provider rejected the API key"))
 c.put("/api/settings", json={"provider": "openrouter"})
 c.post("/api/chats/run-test-0004/send", json={"content": "run sleep 30"})
 time.sleep(0.4)
@@ -362,7 +364,7 @@ sbx.terminate()
 os.environ.pop("LARK_SANDBOX_URL"); os.environ.pop("LARK_SANDBOX_TOKEN")
 c.put("/api/settings", json={"provider": "gateway", "models": {"gateway": "x/y"}})
 ev = chat("hello")
-run("bad key at chat time gives error event", ev == [{"error": "Invalid API key (401)"}])
+run("bad key at chat time gives error event", len(ev) == 1 and ev[0]["error"].startswith("The provider rejected the API key"))
 
 run("bad provider rejected", c.put("/api/settings", json={"provider": "nope"}).status_code == 400)
 run("role validation", c.post("/api/chat", json={"messages": [{"role": "system", "content": "x"}]}).status_code == 422)
@@ -395,8 +397,15 @@ def msgs(chat_id):
     return [p for m, p in sent if m == "sendMessage" and p["chat_id"] == chat_id]
 
 
-def say_to_bot(uid, text, name="Someone"):
+def say_to_bot(uid, text, name="Someone", settle=True):
     tg({"message": {"chat": {"id": uid, "type": "private"}, "from": {"id": uid, "first_name": name}, "text": text}})
+    if settle and uid == 111:  # the owner's replies are sent as the run goes: wait for it and for the last message to go out
+        from lark import runs as _r
+        end = time.time() + 15
+        time.sleep(0.2)
+        while _r.get("telegram-owner") and time.time() < end:
+            time.sleep(0.1)
+        time.sleep(0.3)
 
 
 c.put("/api/settings", json={"provider": "openrouter", "models": {"openrouter": "a/model"}})
@@ -618,6 +627,82 @@ for _ in range(50):
 off = c.get("/api/chats/uichat-0001").json()["messages"][-1]["content"]
 run("switching interfaces off removes the guidance", "Timeline(" not in off and c.get("/api/settings").json()["generative_ui"] is False)
 c.put("/api/settings", json={"generative_ui": True})
+
+# ---- reliability: failures the user should never see ----
+from lark import providers as _prov, runs as _runs, health as _health  # noqa: E402
+_prov.BACKOFF = (0.01, 0.01)
+
+
+def say_in(chat_id, text):
+    c.post(f"/api/chats/{chat_id}/send", json={"content": text})
+    wait_idle(chat_id)
+    return c.get(f"/api/chats/{chat_id}").json()
+
+
+doc = say_in("rel-chat-0001", "flaky one")
+run("a flaky provider is retried quietly", doc["messages"][-1]["content"] == "Echo: flaky one" and not doc.get("error"))
+doc = say_in("rel-chat-0002", "down for good")
+run("a provider that stays down gives a plain message", doc.get("error", "").startswith("The model provider is having trouble"))
+doc = say_in("rel-chat-0003", "emptyonce please")
+run("an empty model reply is asked again", doc["messages"][-1]["content"] == "Echo: emptyonce please")
+doc = say_in("rel-chat-0004", "emptyreply always")
+run("a model that returns nothing never leaves a silent chat", "didn't get an answer" in doc["messages"][-1]["content"])
+
+# a restart in the middle of a reply: it resumes from the journal
+import json as _json  # noqa: E402
+chats_ = __import__("lark.chats", fromlist=["x"])
+chats_.save("rel-chat-0005", [{"role": "user", "content": "resume me"}])
+(_runs._dir() / "rel-chat-0005.json").write_text(_json.dumps({"chat_id": "rel-chat-0005", "attempts": 0, "events": [
+    {"text": "Working on it. "}, {"tool_start": {"id": "c1", "name": "run_command", "title": "Run command", "detail": "ls"}},
+    {"tool_end": {"id": "c1", "ok": True, "output": "a.txt"}}]}))
+c.portal.call(_runs.resume_all)
+wait_idle("rel-chat-0005")
+doc = c.get("/api/chats/rel-chat-0005").json()
+last = doc["messages"][-1]
+run("a reply cut off by a restart carries on, keeping its earlier steps",
+    [m["role"] for m in doc["messages"]] == ["user", "assistant"] and last["content"].startswith("Working on it. ")
+    and "Note from the system" in last["content"] and "Run command ls -> ok: a.txt" in last["content"]
+    and any(p["type"] == "tool" and p["state"] == "ok" for p in last["parts"]))
+run("the journal is cleared once it finishes", not (_runs._dir() / "rel-chat-0005.json").exists())
+chats_.save("rel-chat-0006", [{"role": "user", "content": "again"}])
+(_runs._dir() / "rel-chat-0006.json").write_text(_json.dumps({"chat_id": "rel-chat-0006", "attempts": 2, "events": []}))
+c.portal.call(_runs.resume_all)
+run("a reply restarted too many times is given up on, out loud",
+    "restarted while replying" in c.get("/api/chats/rel-chat-0006").json()["messages"][-1]["content"]
+    and not (_runs._dir() / "rel-chat-0006.json").exists())
+
+# contacts are found by name, @handle or part of either; a missing or null image never costs the message
+st_ = telegram.load()
+st_["owner"] = {"id": 111, "name": "Oscar"}
+st_["contacts"]["333"] = {"name": "Sam", "policy": "auto", "scope": "", "handle": "samb"}
+telegram.save(st_)
+run("contact found by @handle, any case", telegram.find_contact(st_, "@SamB")[0] == "333" and telegram.find_contact(st_, "sa")[0] == "333")
+run("unknown contact is not guessed", telegram.find_contact(st_, "nobody") == (None, None))
+r = c.portal.call(_tools.MESSAGE_CONTACT.run, {"contact": "samb", "text": "by handle", "image": "null"})
+run("an image of 'null' means no image", r.startswith("Sent") and msgs(333)[-1]["text"] == "by handle")
+_real_read = sandbox.read_binary
+
+
+async def _missing(path):
+    raise sandbox.SandboxError(f"No such file: {path}")
+
+
+sandbox.read_binary = _missing
+r = c.portal.call(_tools.MESSAGE_CONTACT.run, {"contact": "Sam", "text": "no such picture", "image": "/home/lark/nothere.png"})
+sandbox.read_binary = _real_read
+run("a missing image still sends the words and says so", msgs(333)[-1]["text"] == "no such picture" and "wasn't attached" in r)
+
+# the owner on Telegram can keep texting while Lark works
+n_before = len(msgs(111))
+say_to_bot(111, "run sleep 1; echo first", "Oscar", settle=False)
+say_to_bot(111, "and another thing", "Oscar", settle=False)
+time.sleep(0.5)
+while _runs.get("telegram-owner"):
+    time.sleep(0.1)
+time.sleep(0.7)
+texts = [m["text"] for m in msgs(111)[n_before:]]
+run("a second Telegram message while working is answered, not refused", not any("Still working" in t for t in texts) and any("Echo: and another thing" in t for t in texts))
+run("problems are counted without content", isinstance(_health.summary()["last_hour"], dict))
 
 c.post("/api/chats/memchat-0003/send", json={"content": "when are we doing the cheese tour again? sysdump"})
 for _ in range(50):

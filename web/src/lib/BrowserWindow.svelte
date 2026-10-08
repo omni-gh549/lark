@@ -15,7 +15,14 @@
   let queue = Promise.resolve();
 
   // Your clicks and keys go straight to the browser and nowhere else: not to the model, the chat or memory.
-  const send = (body) => (queue = queue.then(() => api("/api/browser/input", { method: "POST", body }).catch(() => {})));
+  let problem = $state("");
+  const send = (body) =>
+    (queue = queue.then(() =>
+      api("/api/browser/input", { method: "POST", body }).then(
+        () => (problem = ""),
+        (e) => (problem = e.message), // say so instead of letting keystrokes vanish
+      ),
+    ));
   const SPECIAL = { Enter: "Enter", Backspace: "Backspace", Tab: "Tab", Escape: "Escape", Delete: "Delete", Home: "Home", End: "End",
     ArrowUp: "ArrowUp", ArrowDown: "ArrowDown", ArrowLeft: "ArrowLeft", ArrowRight: "ArrowRight", PageUp: "PageUp", PageDown: "PageDown" };
 
@@ -137,6 +144,9 @@
   </div>
   {#if control}
     <p class="ask">Lark is paused while you're in control. Press {asked ? "I'm signed in" : "Done"} to let it continue.</p>
+  {/if}
+  {#if problem}
+    <p class="ask">{problem}</p>
   {/if}
   {#if asked}
     <p class="ask">Lark needs you to sign in{asked.site ? ` to ${asked.site}` : ""}.{asked.reason ? ` ${asked.reason}` : ""}{control ? " Click and type in the window below, then press I'm signed in." : ""}</p>

@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 app = FastAPI()
 GOOD = "sk-good-key-1234"
+SEEN: dict = {}  # how many times each flaky prompt has been asked
 
 
 def authed(request: Request) -> bool:
@@ -47,6 +48,13 @@ async def chat(request: Request):
         n = sum(1 for p in last if p.get("type") == "image_url" and p["image_url"]["url"].startswith("data:image/"))
         last = f"vision {n} " + " ".join(p.get("text", "") for p in last if p.get("type") == "text")
 
+    if last_msg["role"] == "user" and isinstance(last, str):
+        SEEN[last] = SEEN.get(last, 0) + 1
+        if last.startswith("flaky") and SEEN[last] <= 2:
+            return JSONResponse({"error": {"message": "overloaded"}}, status_code=503)
+        if last.startswith("down"):
+            return JSONResponse({"error": {"message": "gone"}}, status_code=503)
+
     def call(name, args, i=0):
         chunks = [{"index": i, "id": f"call_{i + 1}", "type": "function", "function": {"name": name, "arguments": ""}},
                   {"index": i, "function": {"arguments": json.dumps(args)[:8]}},
@@ -81,6 +89,9 @@ async def chat(request: Request):
                 important = "lift" in said or any(n.lower().find("router") >= 0 and "router" in said for n in payload["owner_notes"])
                 out = json.dumps({"notify": important, "summary": "Wants a lift or mentioned the router.", "needs_decision": False})
             yield "data: " + json.dumps({"choices": [{"delta": {"content": out}}]}) + "\n\n"
+            yield "data: [DONE]\n\n"
+            return
+        if last.startswith("emptyreply") or (last.startswith("emptyonce") and SEEN.get(last, 0) == 1):
             yield "data: [DONE]\n\n"
             return
         if last.endswith("sysdump"):

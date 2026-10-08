@@ -49,7 +49,7 @@
   async function submit() {
     const t = text;
     const ids = attachments.map((a) => a.id);
-    if ((!t.trim() && !ids.length) || chat.busy || uploading) return;
+    if ((!t.trim() && !ids.length) || uploading) return;
     text = "";
     attachments = [];
     note = "";
@@ -103,7 +103,7 @@
       {:else if m.error}
         <div class="msg error">{m.content}</div>
       {:else}
-        {@const live = chat.busy && m === chat.messages.at(-1)}
+        {@const live = chat.busy && m === chat.messages.findLast((x) => x.role === "assistant")}
         {@const lastPart = m.parts?.at(-1)}
         {@const active = (m.parts ?? []).filter((p) => p.type === "tool" && p.state === "running")}
         <div class="turn">
@@ -111,7 +111,7 @@
             {#if p.type === "text"}
               {#each p.text ? segments(p.text) : [] as s}
                 {#if s.type === "ui"}
-                  <Block source={s.text} open={s.open && live} onsend={(t) => !chat.busy && send(t, [])} />
+                  <Block source={s.text} open={s.open && live} onsend={(t) => send(t, [])} />
                 {:else if s.text.trim()}
                   <div class="msg md">{@html render(s.text)}</div>
                 {/if}
@@ -168,7 +168,7 @@
         placeholder="Message Lark"
         aria-label="Message Lark"
       ></textarea>
-      {#if chat.busy}
+      {#if chat.busy && !text.trim() && !attachments.length}
         <button type="button" class="send" aria-label="Stop" onclick={stop}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/></svg>
         </button>

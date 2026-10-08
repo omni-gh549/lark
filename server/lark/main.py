@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import agent, auth, chats, files, memory, providers, runs, sandbox, search, telegram, tools, vault
+from . import agent, auth, chats, files, health, memory, providers, runs, sandbox, search, telegram, tools, vault
 
 KEY_NAMES = set(providers.PROVIDERS) | set(search.SEARCH_PROVIDERS) | {"telegram"}
 DIST = Path(os.environ.get("LARK_DIST", Path(__file__).resolve().parents[2] / "web" / "dist"))
@@ -21,6 +21,10 @@ async def lifespan(_app):
     poller = asyncio.ensure_future(telegram.poll())  # the Telegram bot, when a token is saved
     await asyncio.to_thread(memory.reindex)  # index chats saved before memory existed (cheap when already done)
     memory.schedule_embed()
+    try:
+        await runs.resume_all()  # replies cut off by the last restart carry on
+    except Exception as e:
+        health.record("run", f"resume failed: {type(e).__name__}")
     yield
     poller.cancel()
 
@@ -39,7 +43,7 @@ async def guard(request: Request, call_next):
     if (request.url.path == "/api/health" and request.client and request.client.host in ("127.0.0.1", "::1")
             and auth.host_is_local(request.headers.get("host", ""))):
         # for the deploy script on the server itself: wait until nothing is running before a restart
-        return JSONResponse({"running": runs.running()})
+        return JSONResponse({"running": runs.running(), "problems": health.summary()})
     if not auth.password():
         if not auth.host_is_local(request.headers.get("host", "")):
             return err(403, "Set LARK_PASSWORD on the server before exposing Lark beyond localhost.")
@@ -421,12 +425,13 @@ def model_history(messages: list[dict]) -> list[dict]:
     return out
 
 
+runs.history_builder = model_history
+
+
 @app.post("/api/chats/{chat_id}/send")
 async def send_to_chat(chat_id: str, body: SendIn):
     if not chats.valid(chat_id):
         return err(400, "Bad chat id.")
-    if runs.get(chat_id):
-        return err(409, "Lark is still replying in this chat.")
     conf = ready()
     if isinstance(conf, JSONResponse):
         return conf
@@ -437,6 +442,11 @@ async def send_to_chat(chat_id: str, body: SendIn):
     user = {"role": "user", "content": body.content.strip()}
     if images:
         user["images"] = images
+    try:
+        if runs.queue(chat_id, user):  # sent while Lark is still replying: like texting, it's answered right after
+            return {"ok": True, "queued": True}
+    except ValueError as e:
+        return err(413, str(e))
     messages = doc["messages"] + [user]
     try:
         chats.save(chat_id, messages)

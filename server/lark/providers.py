@@ -1,4 +1,5 @@
 """Chat providers. Both speak the OpenAI chat completions protocol."""
+import asyncio
 import json
 from collections.abc import AsyncIterator
 
@@ -58,9 +59,50 @@ async def check_key(name: str, key: str) -> str:
     return "Key accepted."
 
 
+RETRIES = 3  # attempts per model call when the provider fails before saying anything
+BACKOFF = (1.0, 3.0)  # seconds to wait before the 2nd and 3rd attempt
+
+
+def friendly(status: int | None, detail: str = "") -> str:
+    """What to tell the user when a model call failed for good."""
+    if status in (401, 403):
+        text = "The provider rejected the API key. Check it in Settings."
+    elif status == 402:
+        text = "The provider says the account is out of credit."
+    elif status == 404:
+        text = "The provider doesn't know that model. Pick another in Settings."
+    elif status == 429:
+        text = "The model is busy right now. Try again in a minute."
+    elif status and status >= 500:
+        text = "The model provider is having trouble right now. Try again in a moment."
+    else:
+        text = "Couldn't reach the model provider. Check the connection and try again."
+    return f"{text} ({detail})" if detail and status not in (429,) and not (status and status >= 500) else text
+
+
 async def stream_round(name: str, key: str, model: str, messages: list[dict], tools: list[dict] | None = None) -> AsyncIterator[dict]:
     """One model call. Yields {"text"} chunks, then {"tool_calls": [...]} if the model asked for tools,
-    then {"done": True}; or {"error": str}."""
+    then {"done": True}; or {"error": str}. Transient failures before any output are retried quietly."""
+    last = {"error": friendly(None)}
+    for attempt in range(RETRIES):
+        spoke = False
+        retry = False
+        async for ev in _once(name, key, model, messages, tools):
+            if "error" in ev:
+                last = ev
+                retry = not spoke and ev.get("transient", False)
+                break
+            spoke = spoke or "text" in ev or "tool_calls" in ev
+            yield ev
+        else:
+            return
+        if not retry or attempt == RETRIES - 1:
+            break
+        await asyncio.sleep(min(ev.get("wait") or BACKOFF[min(attempt, len(BACKOFF) - 1)], 10))
+    yield {"error": last["error"]}
+
+
+async def _once(name: str, key: str, model: str, messages: list[dict], tools: list[dict] | None):
     body = {"model": model, "messages": messages, "stream": True}
     if tools:
         body["tools"] = tools
@@ -75,7 +117,14 @@ async def stream_round(name: str, key: str, model: str, messages: list[dict], to
             ) as r:
                 if r.status_code != 200:
                     text = (await r.aread()).decode(errors="replace")
-                    yield {"error": _error_text(text, r.status_code)}
+                    wait = None
+                    try:
+                        wait = float(r.headers.get("retry-after", ""))
+                    except ValueError:
+                        pass
+                    detail = _error_text(text, r.status_code)
+                    yield {"error": friendly(r.status_code, detail.rsplit(" (", 1)[0] if r.status_code < 500 else ""),
+                           "transient": r.status_code in (408, 409, 425, 429) or r.status_code >= 500, "wait": wait}
                     return
                 async for line in r.aiter_lines():
                     if not line.startswith("data:"):
@@ -89,7 +138,8 @@ async def stream_round(name: str, key: str, model: str, messages: list[dict], to
                         continue
                     if obj.get("error"):
                         err = obj["error"]
-                        yield {"error": err.get("message", "The provider stopped mid-reply.") if isinstance(err, dict) else str(err)}
+                        msg = err.get("message", "") if isinstance(err, dict) else str(err)
+                        yield {"error": msg or "The provider stopped mid-reply.", "transient": True}
                         return
                     for choice in obj.get("choices", []):
                         delta = choice.get("delta") or {}
@@ -105,7 +155,7 @@ async def stream_round(name: str, key: str, model: str, messages: list[dict], to
                                 call["name"] = fn["name"]
                             call["arguments"] += fn.get("arguments") or ""
     except httpx.HTTPError as e:
-        yield {"error": f"Could not reach {PROVIDERS[name]['label']}: {type(e).__name__}."}
+        yield {"error": friendly(None), "transient": True}
         return
     if calls:
         yield {"tool_calls": [{**c, "id": c["id"] or f"call_{i}"} for i, c in sorted(calls.items())]}

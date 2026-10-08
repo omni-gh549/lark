@@ -4,7 +4,9 @@ import { loadSettings } from "./store.svelte.js";
 const LEGACY = "lark.chat"; // chats used to live in the browser
 const CURRENT = "lark.chat.id";
 
-export const chat = $state({ id: null, messages: [], busy: false, list: [], ready: false });
+export const chat = $state({ id: null, messages: [], busy: false, list: [], ready: false, pending: 0 });
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const remember = (id) => {
   try {
@@ -140,15 +142,21 @@ async function attach(id, messages) {
     reply.error = true;
     reply.content = reply.content ? `${reply.content}\n\n${failed}` : failed;
   } else if (!reply.content && !reply.parts.length) {
-    messages.pop();
+    const at = messages.findIndex((m) => m === reply);
+    if (at >= 0) messages.splice(at, 1);
   }
   controller = null;
   watching = false;
   chat.busy = false;
   refreshList();
+  if (chat.pending) {
+    // messages were sent while this reply was running: the server answers them next, so pick that run up
+    chat.pending = 0;
+    openChat(id);
+  }
 }
 
-export async function openChat(id) {
+export async function openChat(id, tries = 0) {
   detach();
   try {
     const doc = await api(`/api/chats/${id}`);
@@ -158,7 +166,12 @@ export async function openChat(id) {
     if (doc.running) attach(doc.id, chat.messages);
     else if (doc.error) chat.messages.push({ role: "assistant", content: doc.error, error: true });
   } catch (e) {
-    if (e.status === 404) remember(null);
+    if (e.status === 404) return remember(null);
+    // the server is restarting or the connection dropped: keep trying quietly instead of leaving a dead page
+    if (tries < 40) {
+      await sleep(Math.min(1000 + tries * 500, 5000));
+      if (!chat.id || chat.id === id) return openChat(id, tries + 1);
+    }
   }
 }
 
@@ -183,22 +196,37 @@ export async function stop() {
   if (chat.id) await api(`/api/chats/${chat.id}/stop`, { method: "POST" }).catch(() => {});
 }
 
+// A failed send is retried while the server restarts or the connection blips, so a message is never just lost.
+async function post(id, body) {
+  for (let i = 0; ; i++) {
+    try {
+      return await api(`/api/chats/${id}/send`, { method: "POST", body });
+    } catch (e) {
+      if (i >= 4 || (e.status && e.status < 502)) throw e;
+      await sleep(1500 * (i + 1));
+    }
+  }
+}
+
 export async function send(text, images = []) {
-  if (chat.busy || (!text.trim() && !images.length)) return;
+  if (!text.trim() && !images.length) return;
   const id = (chat.id ??= crypto.randomUUID());
   remember(id);
+  const queued = chat.busy; // sent while Lark is still replying: it's answered right after, like texting
   // always go through chat.messages: pushing to a local copy of the array wouldn't update the page
   chat.messages = chat.messages.filter((m) => !m.error);
   chat.messages.push({ role: "user", content: text.trim(), ...(images.length ? { images } : {}) });
-  chat.busy = true;
+  if (queued) chat.pending++;
+  else chat.busy = true;
   try {
-    await api(`/api/chats/${id}/send`, { method: "POST", body: { content: text.trim(), images } });
+    await post(id, { content: text.trim(), images });
   } catch (e) {
-    chat.busy = false;
+    if (queued) chat.pending = Math.max(0, chat.pending - 1);
+    else chat.busy = false;
     if (e.status === 401) await loadSettings();
     chat.messages.push({ role: "assistant", content: e.message, error: true });
     return;
   }
   refreshList();
-  await attach(id, chat.messages);
+  if (!queued) await attach(id, chat.messages);
 }

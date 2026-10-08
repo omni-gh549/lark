@@ -23,7 +23,7 @@ import time
 
 import httpx
 
-from . import agent, chats, files, memory, providers, runs, vault
+from . import agent, chats, files, health, memory, providers, runs, vault
 
 log = logging.getLogger("lark.telegram")
 API = os.environ.get("LARK_TELEGRAM_API", "https://api.telegram.org")
@@ -87,14 +87,27 @@ async def api(method: str, token: str | None = None, files_: dict | None = None,
     token = token or vault.get_key("telegram")
     if not token:
         raise TelegramError("No Telegram bot token yet.")
-    try:
-        async with httpx.AsyncClient(timeout=_timeout) as client:
-            if files_:
-                r = await client.post(f"{API}/bot{token}/{method}", data=params, files=files_)
-            else:
-                r = await client.post(f"{API}/bot{token}/{method}", json=params)
-        data = r.json()
-    except (httpx.HTTPError, ValueError):
+    for attempt in range(3):
+        wait = None
+        try:
+            async with httpx.AsyncClient(timeout=_timeout) as client:
+                if files_:
+                    r = await client.post(f"{API}/bot{token}/{method}", data=params, files=files_)
+                else:
+                    r = await client.post(f"{API}/bot{token}/{method}", json=params)
+            data = r.json()
+        except (httpx.ConnectError, httpx.ConnectTimeout):
+            data, wait = None, 1.5 * (attempt + 1)  # never reached Telegram, so trying again can't double-send
+        except (httpx.HTTPError, ValueError):
+            raise TelegramError("Couldn't reach Telegram.")
+        else:
+            code = data.get("error_code")
+            if not data.get("ok") and (code == 429 or (isinstance(code, int) and code >= 500)) and method != "getUpdates":
+                wait = min(float((data.get("parameters") or {}).get("retry_after") or 2 * (attempt + 1)), 15)
+        if wait is None or attempt == 2:
+            break
+        await asyncio.sleep(wait)
+    if data is None:
         raise TelegramError("Couldn't reach Telegram.")
     if not data.get("ok"):
         raise TelegramError(data.get("description") or "Telegram refused that.")
@@ -182,13 +195,21 @@ def contacts_ready() -> bool:
 
 
 def find_contact(st: dict, name: str):
-    name = name.strip().lower()
-    for cid, c in st["contacts"].items():
-        if c["name"].lower() == name:
-            return cid, c
-    for cid, c in st["contacts"].items():  # a unique first-name match is fine too
-        if c["name"].lower().split()[0] == name:
-            return cid, c
+    """A contact by display name, @handle or a unique part of either, ignoring case."""
+    name = name.strip().lstrip("@").lower()
+    if not name:
+        return None, None
+    contacts = list(st["contacts"].items())
+    for test in (
+        lambda c: c["name"].lower() == name or c.get("handle", "").lower() == name,
+        lambda c: name in c["name"].lower().split(),  # a first name
+        lambda c: name in c["name"].lower() or (bool(c.get("handle")) and name in c["handle"].lower()),
+    ):
+        hits = [(cid, c) for cid, c in contacts if test(c)]
+        if len(hits) == 1:
+            return hits[0]
+        if hits:
+            break  # ambiguous: better to say so than to message the wrong person
     return None, None
 
 
@@ -240,7 +261,18 @@ def _name(user: dict) -> str:
     return (full or user.get("username") or "Someone")[:40]
 
 
+_chat_locks: dict = {}
+
+
 async def handle(update: dict):
+    """One update at a time per chat, so a person's messages are handled in the order they sent them."""
+    m = update.get("message") or (update.get("callback_query") or {}).get("message") or {}
+    lock = _chat_locks.setdefault((m.get("chat") or {}).get("id"), asyncio.Lock())
+    async with lock:
+        await _handle(update)
+
+
+async def _handle(update: dict):
     try:
         if "callback_query" in update:
             await _on_button(update["callback_query"])
@@ -336,8 +368,6 @@ async def _from_owner(chat_id: int, text: str, photo):
         return await say(chat_id, "Started a fresh conversation.")
     if text == "/stop":
         return await say(chat_id, "Stopped." if runs.stop(OWNER_CHAT) else "Nothing is running.")
-    if runs.get(OWNER_CHAT):
-        return await say(chat_id, "Still working on your last message. Send /stop to cancel it.")
     conf = main.ready()
     if not isinstance(conf, tuple):
         return await say(chat_id, "Lark isn't set up to answer yet. Add a model key in Settings on the web app.")
@@ -351,10 +381,21 @@ async def _from_owner(chat_id: int, text: str, photo):
                 pass
     if not text and not user.get("images"):
         return
+    # a message sent while Lark is still working is saved and answered right after, like texting a person
+    if runs.queue(OWNER_CHAT, user):
+        return
     doc = chats.load(OWNER_CHAT) or {"messages": []}
     messages = doc["messages"] + [user]
     chats.save(OWNER_CHAT, messages)
-    run = runs.start(OWNER_CHAT, *conf, main.model_history(messages))
+    runs.start(OWNER_CHAT, *conf, main.model_history(messages))  # _relay_owner follows it and texts the replies
+
+
+async def _relay_owner(run):
+    """Follows a run in the owner's chat and sends its replies to Telegram. Started by runs for every run, including
+    follow-ups to queued messages and replies resumed after a restart."""
+    chat_id = owner_id()
+    if not chat_id:
+        return
 
     async def typing():
         while not run.finished:
@@ -365,18 +406,26 @@ async def _from_owner(chat_id: int, text: str, photo):
             await asyncio.sleep(4)
 
     ticker = asyncio.ensure_future(typing())
-    buf, sent_any, error = "", False, None
+    buf, sent_any, error, stopped = "", False, None, False
 
     async def flush():
         nonlocal buf, sent_any
         text, buf = buf.strip(), ""
         for piece in (_pieces(text) if text else []):
-            await say(chat_id, piece)
-            sent_any = True
+            try:
+                await say(chat_id, piece)
+                sent_any = True
+            except TelegramError as e:
+                health.record("telegram", f"could not send a reply: {e}")
 
     try:
+        if run.resumed:
+            try:
+                await say(chat_id, "Sorry, I got restarted. Picking up where I was.")
+            except TelegramError:
+                pass
         # Send each stretch of text as its own message as soon as Lark moves on to a tool, like a person texting.
-        async for ev in run.stream():
+        async for ev in run.stream(run.skip):
             if "text" in ev:
                 buf += ev["text"]
             elif "tool_start" in ev:
@@ -387,14 +436,26 @@ async def _from_owner(chat_id: int, text: str, photo):
                         await send_photo(chat_id, name)
                         sent_any = True
                     except TelegramError as e:
-                        log.warning("couldn't send image %s to the owner: %s", name, e)
+                        health.record("telegram", f"couldn't send an image: {e}")
             elif "error" in ev:
                 error = ev["error"]
+            elif "stopped" in ev:
+                stopped = True
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        health.record("telegram", f"relay failed: {type(e).__name__}")
     finally:
         ticker.cancel()
     await flush()
-    if not sent_any:
-        await say(chat_id, error or "(No reply.)")
+    if not sent_any and not stopped and not run.discard and not run.interrupted:
+        try:
+            await say(chat_id, error or "(No reply.)")
+        except TelegramError:
+            pass
+
+
+runs.RELAYS[OWNER_CHAT] = _relay_owner
 
 
 def _rate_ok(cid: str) -> bool:

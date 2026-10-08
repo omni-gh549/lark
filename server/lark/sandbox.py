@@ -1,4 +1,5 @@
 """Client for the sandbox exec agent (sandbox/agent.py). Set LARK_SANDBOX_URL and LARK_SANDBOX_TOKEN to enable."""
+import asyncio
 import os
 
 import httpx
@@ -14,14 +15,26 @@ def configured() -> bool:
     return bool(os.environ.get("LARK_SANDBOX_URL") and os.environ.get("LARK_SANDBOX_TOKEN"))
 
 
-async def _call(method: str, path: str, *, json=None, params=None, timeout: float = 15.0) -> dict:
+PATIENCE = (1, 2, 3, 4, 5)  # seconds between attempts while the sandbox is restarting (about 15 s in all)
+
+
+async def _call(method: str, path: str, *, json=None, params=None, timeout: float = 15.0, patient: bool = True) -> dict:
     url = os.environ["LARK_SANDBOX_URL"].rstrip("/") + path
     headers = {"Authorization": f"Bearer {os.environ['LARK_SANDBOX_TOKEN']}"}
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            r = await client.request(method, url, json=json, params=params, headers=headers)
-    except httpx.HTTPError:
-        raise SandboxError("The sandbox isn't reachable. Is the container running?")
+    delays = iter(PATIENCE if patient else ())
+    while True:
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                r = await client.request(method, url, json=json, params=params, headers=headers)
+            break
+        except (httpx.ConnectError, httpx.ConnectTimeout):
+            # never reached the sandbox (it is restarting, or still starting): nothing ran, so waiting and trying again is safe
+            delay = next(delays, None)
+            if delay is None:
+                raise SandboxError("The sandbox isn't reachable. Is the container running?")
+            await asyncio.sleep(delay)
+        except httpx.HTTPError:
+            raise SandboxError("The sandbox isn't reachable. Is the container running?")
     data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
     if r.status_code != 200:
         raise SandboxError(data.get("error") or f"The sandbox returned an error ({r.status_code}).")
@@ -35,7 +48,7 @@ async def run(command: str, timeout: int) -> dict:
 async def kill_all() -> None:
     """Kill every command running in the sandbox (used when a reply is stopped)."""
     try:
-        await _call("POST", "/exec/kill", timeout=5)
+        await _call("POST", "/exec/kill", timeout=5, patient=False)
     except SandboxError:
         pass
 
@@ -61,7 +74,7 @@ async def browser_input(body: dict) -> None:
 
 async def browser_hold(on: bool) -> None:
     try:
-        await _call("POST", "/browser/hold", json={"on": on}, timeout=5)
+        await _call("POST", "/browser/hold", json={"on": on}, timeout=5, patient=False)
     except SandboxError:
         pass
 
@@ -84,7 +97,7 @@ async def frame() -> bytes | None:
 async def cursor() -> dict | None:
     """Where the browser last clicked or typed ({x, y, click, seq}, as fractions of the page), or None."""
     try:
-        return (await _call("GET", "/browser/cursor", timeout=5)).get("cursor")
+        return (await _call("GET", "/browser/cursor", timeout=5, patient=False)).get("cursor")
     except SandboxError:
         return None
 
@@ -104,7 +117,7 @@ async def has_browser() -> bool:
         return False
     if time.time() - _features["at"] > 60:
         try:
-            _features["browser"] = bool((await health()).get("browser"))
+            _features["browser"] = bool((await _call("GET", "/health", patient=False)).get("browser"))
         except SandboxError:
             _features["browser"] = False
         _features["at"] = time.time()

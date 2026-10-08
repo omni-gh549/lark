@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from datetime import datetime, timezone
 
-from . import providers, tools
+from . import health, providers, tools
 
 MAX_PARALLEL = 4  # tool calls and subagents running at once
 MAX_ROUNDS = 200  # backstop on tool rounds per reply (and per subagent)
@@ -109,22 +109,37 @@ async def loop(name, key, model, history, available, max_rounds, sub=False, syst
     gate = asyncio.Semaphore(MAX_PARALLEL)
 
     rounds = 0
+    empty = 0
+    worked = False
     while max_rounds is None or rounds < max_rounds:
         await tools.wait_unpaused()
         rounds += 1
         calls = None
+        spoke = False
         async for ev in providers.stream_round(name, key, model, messages, specs):
             if "tool_calls" in ev:
                 calls = ev["tool_calls"]
             elif "done" in ev:
                 pass
             else:
+                spoke = spoke or bool(ev.get("text"))
                 yield ev
                 if "error" in ev:
+                    health.record("provider", ev["error"])
                     return
+        if not calls and not spoke:
+            # the model returned nothing at all: ask again before giving up, so the user never sees a silent non-answer
+            empty += 1
+            if empty <= 2:
+                rounds -= 1
+                continue
+            health.record("run", "model returned an empty reply")
+            yield {"text": ("I finished that but didn't get a written answer back. Ask me for a summary if you'd like one." if worked
+                            else "I didn't get an answer from the model. Send that again and I'll retry.")}
         if not calls:
             yield {"done": True}
             return
+        worked = True
 
         messages.append({"role": "assistant", "content": None, "tool_calls": [
             {"id": c["id"], "type": "function", "function": {"name": c["name"], "arguments": c["arguments"] or "{}"}}
@@ -157,10 +172,12 @@ async def loop(name, key, model, history, available, max_rounds, sub=False, syst
                         return True, out[0], {"images": out[1]}
                     return True, out, extra
                 except tools.ToolError as e:
+                    health.record(f"tool:{c['name']}", str(e))
                     return False, str(e), extra
                 except asyncio.CancelledError:
                     raise
-                except Exception:
+                except Exception as e:
+                    health.record(f"tool:{c['name']}", f"unexpected {type(e).__name__}")
                     return False, "The tool failed unexpectedly.", extra
 
         parsed = []

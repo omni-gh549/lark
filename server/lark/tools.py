@@ -351,17 +351,18 @@ MEMORY_TOOLS = [
 
 async def message_contact(args: dict):
     from . import telegram
-    image = ""
+    image, missed = "", ""
     path = args.get("image")
-    if isinstance(path, str) and path.strip():
+    if isinstance(path, str) and path.strip().lower() not in ("", "null", "none", "undefined", "n/a"):
         try:
-            image = files.save(await sandbox.read_binary(path))
+            image = files.save(await sandbox.read_binary(path.strip()))
         except (sandbox.SandboxError, files.FileError) as e:
-            raise ToolError(str(e))
+            missed = str(e)  # the words still go: a missing picture shouldn't cost the whole message
     try:
-        return await telegram.message_contact(_str(args, "contact"), _str(args, "text"), image)
+        result = await telegram.message_contact(_str(args, "contact"), _str(args, "text"), image)
     except telegram.TelegramError as e:
         raise ToolError(str(e))
+    return f"{result} The image wasn't attached ({missed}), so only the text went. Tell the owner." if missed else result
 
 
 async def _tg(name: str, *a):
@@ -386,13 +387,13 @@ TELEGRAM_TOOLS = [
          lambda a: str(a.get("who") or "owner")),
     Tool("telegram_edit", "Edit Telegram message",
          "Edit one of your own Telegram messages (the latest one unless you give message_id). Use exactly the new wording the user gave. "
-         "Edits to contacts need the owner's approval unless the contact is on auto.",
+         "It takes effect straight away.",
          _obj({**_WHO, "text": {"type": "string"}, "message_id": {"type": "integer"}}, ["text"]),
          lambda a: _tg("edit_message", str(a.get("who") or ""), _str(a, "text"), _mid(a)),
          lambda a: str(a.get("text", ""))[:80]),
     Tool("telegram_delete", "Delete Telegram message",
          "Delete one of your own Telegram messages (the latest one unless you give message_id). Telegram only allows this for about 48 hours "
-         "after sending. Deleting from a contact's chat needs the owner's approval unless the contact is on auto.",
+         "after sending. It takes effect straight away.",
          _obj({**_WHO, "message_id": {"type": "integer"}}, []),
          lambda a: _tg("delete_message", str(a.get("who") or ""), _mid(a)),
          lambda a: str(a.get("who") or "owner")),

@@ -12,11 +12,16 @@ export function errorMessage(data, status) {
 }
 
 export async function api(path, { method = "GET", body } = {}) {
-  const res = await fetch(path, {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(path, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new ApiError("Can't reach Lark right now. Check the connection.", 0);
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new ApiError(errorMessage(data, res.status), res.status);
   return data;
