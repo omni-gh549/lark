@@ -523,12 +523,19 @@ st_ = telegram.load(); st_["contacts"][str(333)]["handle"] = "samb"; telegram.sa
 run("brief shows the handle and wraps contact chat text as untrusted", "@samb" in telegram.owner_brief() and "UNTRUSTED CONTACT TEXT" in telegram.owner_brief())
 reply_ = "On it.\n[[PASS_ON: a screenshot of the router listing]]"
 st_ = telegram.load()
+c.put(f"/api/telegram/contacts/{sam}", json={"policy": "draft"})
 c.portal.call(telegram._offer_task, "333", "Sam", "a screenshot of the router listing", "can you get me a screenshot of the router")
 offer = [p_ for m_, p_ in sent if m_ == "sendMessage" and p_["chat_id"] == 111][-1]
 run("contact request is offered to the owner with Do it / Ignore", "needs me" in offer["text"] and offer["reply_markup"]["inline_keyboard"][0][0]["text"] == "Do it")
 tid = list(telegram.load()["tasks"])[-1]
 tg({"callback_query": {"id": "qt", "from": {"id": 111}, "data": f"x:{tid}", "message": {"message_id": 3}}})
 run("ignoring a request drops it without running anything", tid not in telegram.load()["tasks"])
+c.put(f"/api/telegram/contacts/{sam}", json={"policy": "auto"})
+n_before = len(msgs(111))
+c.portal.call(telegram._offer_task, "333", "Sam", "a screenshot of the router listing", "can you get me a screenshot of the router")
+time.sleep(1.5)
+run("an auto contact's request is just done: no button, no permission message", not any("needs me" in m["text"] for m in msgs(111)[n_before:])
+    and any("screenshot of the router" in m["text"] and "Don't ask" in m["text"] or "Echo:" in m["text"] for m in msgs(111)[n_before:]))
 m_ = telegram._PASS_ON.search(reply_)
 run("pass-on marker is recognised and stripped", m_ and m_.group(1).startswith("a screenshot") and telegram._PASS_ON.sub("", reply_).strip() == "On it.")
 from lark import files as _files  # noqa: E402
@@ -864,6 +871,29 @@ async def _late_steer():
 
 late = asyncio.run(_late_steer())
 run("a message during the final answer is answered right after it", "Echo: hello" in late and late.index("Echo: hello") < late.index("Echo: extra"))
+
+# on Telegram the owner gets an acknowledgement and the result, not a running commentary
+from lark import runs as _r2
+
+
+async def _relay_case(events):
+    run_ = _r2.Run("telegram-owner")
+    run_.events = list(events)
+    run_.finished = True
+    await telegram._relay_owner(run_)
+
+
+n_before = len(msgs(111))
+asyncio.run(_relay_case([{"text": "On it."}, {"tool_start": {"id": "a", "name": "browser", "title": "Browser", "detail": ""}}, {"tool_end": {"id": "a", "ok": True, "output": ""}},
+                         {"text": "Croissants in. Now juice."}, {"tool_start": {"id": "b", "name": "browser", "title": "Browser", "detail": ""}}, {"tool_end": {"id": "b", "ok": True, "output": ""}},
+                         {"text": "Trolley is full. Order placed."}, {"done": True}]))
+got = [m["text"] for m in msgs(111)[n_before:]]
+run("Telegram gets the acknowledgement and the result, not the steps in between", got == ["On it.", "Trolley is full. Order placed."])
+n_before = len(msgs(111))
+asyncio.run(_relay_case([{"text": "Looking."}, {"tool_start": {"id": "a", "name": "browser", "title": "Browser", "detail": ""}}, {"tool_end": {"id": "a", "ok": True, "output": ""}},
+                         {"text": "Found it, 3 pm."}, {"tool_start": {"id": "b", "name": "browser", "title": "Browser", "detail": ""}}, {"done": True}]))
+got = [m["text"] for m in msgs(111)[n_before:]]
+run("a reply that ends on a tool step still delivers what it last said", got == ["Looking.", "Found it, 3 pm."])
 
 c.delete("/api/keys/gateway")
 run("delete key", c.get("/api/settings").json()["providers"]["gateway"]["key_hint"] is None)
