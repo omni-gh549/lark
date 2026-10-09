@@ -64,26 +64,62 @@
       else if (historyOpen) historyOpen = false;
       else panelsOpen = false;
     };
-    // iOS keeps the layout viewport put and slides the page when the keyboard opens: follow the visible area instead
+    // iOS keeps the layout viewport put and pans the page when the keyboard opens. While the keyboard is closed the app
+    // simply fills the screen (never trust visualViewport for that: in a home-screen app it can stop short of the
+    // home indicator). While it is open the app is pinned to the visible area, so nothing scrolls or has to be put back.
     const vv = window.visualViewport;
-    // The app is pinned to the visible area (height and offset), so nothing ever scrolls or has to be put back.
+    const root = document.documentElement;
+    let kbHeight = 0;
+    try {
+      kbHeight = Number(localStorage.getItem("lark.kb")) || 0;
+    } catch {}
+    const open = (visible, top) => {
+      root.style.setProperty("--vh", `${Math.round(visible)}px`);
+      root.style.setProperty("--app-h", `${Math.round(visible)}px`);
+      root.style.setProperty("--vt", `${Math.round(top)}px`);
+      root.dataset.kb = "";
+    };
+    const close = () => {
+      root.style.removeProperty("--vh");
+      root.style.removeProperty("--app-h");
+      root.style.setProperty("--vt", "0px");
+      delete root.dataset.kb;
+    };
     const fit = () => {
-      const root = document.documentElement;
-      root.style.setProperty("--vh", `${Math.round(vv.height)}px`);
-      root.style.setProperty("--vt", `${Math.round(vv.offsetTop)}px`);
-      // with the keyboard up the home-indicator inset is covered, so it must not leave a gap
-      if (innerHeight - vv.height > 120) root.dataset.kb = "";
-      else delete root.dataset.kb;
+      const lost = innerHeight - vv.height;
+      if (lost > 120) {
+        kbHeight = lost - vv.offsetTop;
+        open(vv.height, vv.offsetTop);
+      } else close();
+    };
+    // shrink the app the moment a field is focused, before iOS decides it has to pan to show it
+    const typing = (e) => e.target.matches?.("textarea, input:not([type=file]), select") && matchMedia("(pointer: coarse)").matches;
+    const focusin = (e) => {
+      if (typing(e) && kbHeight) open(innerHeight - kbHeight, 0);
+    };
+    const focusout = (e) => {
+      if (typing(e)) setTimeout(() => !document.activeElement?.matches?.("textarea, input, select") && close(), 60);
+    };
+    const savekb = () => {
+      try {
+        if (kbHeight > 120) localStorage.setItem("lark.kb", String(Math.round(kbHeight)));
+      } catch {}
     };
     if (vv) {
       fit();
       vv.addEventListener("resize", fit);
       vv.addEventListener("scroll", fit);
+      document.addEventListener("focusin", focusin);
+      document.addEventListener("focusout", focusout);
+      addEventListener("pagehide", savekb);
+      document.addEventListener("visibilitychange", savekb);
     }
     addEventListener("hashchange", onhash);
     document.addEventListener("click", onclick);
     document.addEventListener("keydown", onkey);
     return () => {
+      document.removeEventListener("focusin", focusin);
+      document.removeEventListener("focusout", focusout);
       vv?.removeEventListener("resize", fit);
       vv?.removeEventListener("scroll", fit);
       removeEventListener("hashchange", onhash);

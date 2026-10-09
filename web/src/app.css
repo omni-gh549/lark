@@ -60,10 +60,11 @@
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-html, body, #app { height: 100%; margin: 0; }
+html, body, #app { margin: 0; }
 html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
 body { overscroll-behavior: none; }
-@supports (height: 100dvh) { html, body, #app { height: var(--vh); } }
+html, body, #app { height: var(--app-h, 100%); }
+html { background-color: var(--bg); }
 body {
   font: 15px/1.45 var(--font);
   color: var(--ink);
@@ -453,6 +454,6 @@ main { min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); grid-te
 /* touch devices: the app is a fixed box over the visible area, so the iOS keyboard can't push or scroll the page */
 @media (pointer: coarse) {
   html, body { position: fixed; inset: 0; width: 100%; overflow: hidden; }
-  #app { position: fixed; left: 0; top: 0; width: 100%; transform: translateY(var(--vt)); }
+  #app { position: fixed; inset: auto; left: 0; top: 0; width: 100%; transform: translateY(var(--vt)); }
   :root[data-kb] { --sab: 0px; }
 }
