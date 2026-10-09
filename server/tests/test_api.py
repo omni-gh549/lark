@@ -343,16 +343,16 @@ ev = sse_events("/api/chats/run-test-0001/events")
 run("events replay from the start and end", ev[0].get("tool_start", {}).get("title") == "Run command" and ev[-1] == {"done": True})
 wait_idle("run-test-0001")
 doc = c.get("/api/chats/run-test-0001").json()
-run("finished reply saved with tool part, after the steering message", [m["role"] for m in doc["messages"]] == ["user", "user", "assistant"]
-    and doc["messages"][2]["parts"][0]["state"] == "ok" and "ran" in doc["messages"][2]["parts"][0]["output"]
-    and doc["messages"][2]["content"].startswith("Echo:"))
-run("the steering message reached the model at the next step, in the same reply", doc["messages"][1]["content"] == "x"
-    and "Sent while you were working" in doc["messages"][2]["content"] and doc["messages"][2]["content"].rstrip().endswith("x"))
+run("a steering message stays where it was sent, between the tool step and the answer", [m["role"] for m in doc["messages"]] == ["user", "assistant", "user", "assistant"]
+    and doc["messages"][1]["parts"][0]["state"] == "ok" and "ran" in doc["messages"][1]["parts"][0]["output"]
+    and doc["messages"][2]["content"] == "x" and doc["messages"][3]["content"].startswith("Echo:"))
+run("the steering message reached the model at the next step, in the same reply", "Sent while you were working" in doc["messages"][3]["content"]
+    and doc["messages"][3]["content"].rstrip().endswith("x"))
 run("no run left over", sse_events("/api/chats/run-test-0001/events") == [{"idle": True}])
 # a second client attaching late still gets everything
 c.post("/api/chats/run-test-0001/send", json={"content": "hello"})
 wait_idle("run-test-0001")
-run("history includes earlier turns", len(c.get("/api/chats/run-test-0001").json()["messages"]) == 5)
+run("history includes earlier turns", len(c.get("/api/chats/run-test-0001").json()["messages"]) == 6)
 # stop keeps what was produced
 c.post("/api/chats/run-test-0002/send", json={"content": "run sleep 30"})
 time.sleep(0.5)

@@ -110,6 +110,22 @@ def assistant_message(events: list[dict]) -> dict | None:
     return {"role": "assistant", "content": content, "parts": parts}
 
 
+def saved_messages(events: list[dict]) -> list[dict]:
+    """Like assistant_message, but a message the user sent mid-run stays where it was sent: the reply is split around it."""
+    out, chunk = [], []
+    for ev in events:
+        if "steer" in ev:
+            if (m := assistant_message(chunk)):
+                out.append(m)
+            out.append(ev["steer"])
+            chunk = []
+        else:
+            chunk.append(ev)
+    if (m := assistant_message(chunk)):
+        out.append(m)
+    return out
+
+
 # ---- the journal: what a run was doing, so a restart doesn't eat the reply ---------------------------------------
 
 def _dir():
@@ -235,14 +251,18 @@ async def _execute(run: Run, name: str, key: str, model: str, history: list[dict
         try:
             if not run.discard:
                 doc = chats.load(run.chat_id) or {"messages": []}
-                msg = assistant_message(run.events)
+                msgs = saved_messages(run.events)
                 messages = doc["messages"]
-                if msg:
+                if any(m.get("role") == "assistant" for m in msgs):
                     # messages sent while it was busy are already saved after the question: the reply goes before them
                     at = len(messages) - run.queued
                     if run.queued and not (0 <= at <= len(messages) and all(m.get("role") == "user" for m in messages[at:])):
                         at = len(messages)
-                    messages = messages[:at] + [msg] + messages[at:]
+                    head = messages[:at]
+                    for s in reversed([e["steer"] for e in run.events if "steer" in e]):
+                        if head and head[-1] == s:
+                            head.pop()  # the model took this one mid-run: it goes back in at the point it was taken
+                    messages = head + msgs + messages[at:]
                 try:
                     chats.save(run.chat_id, messages, error=error)
                 except ValueError:
@@ -289,6 +309,8 @@ def _take_steer(run: Run) -> list[dict]:
         return []
     taken, run.steer = run.steer, []
     run.queued = max(0, run.queued - len(taken))
+    for u in taken:
+        run.push({"steer": u})  # clients show it where it was taken, and the saved chat keeps that order
     out = history_builder(taken)
     for m in out:
         if isinstance(m["content"], str):

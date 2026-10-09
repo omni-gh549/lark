@@ -79,6 +79,15 @@ function finishTools(reply) {
 }
 
 function apply(reply, event) {
+  if (event.steer) {
+    // a message sent mid-run that the model has now taken: show it here, where it landed, not at the bottom
+    const i = chat.messages.findLastIndex((m) => m.role === "user" && m.content === event.steer.content);
+    if (i >= 0) {
+      chat.messages.splice(i, 1);
+      chat.pending = Math.max(0, chat.pending - 1);
+    }
+    reply.parts.push({ type: "steer", content: event.steer.content, ...(event.steer.images?.length ? { images: event.steer.images } : {}) });
+  }
   if (event.text) addText(reply, event.text);
   if (event.tool_start) reply.parts.push({ type: "tool", state: "running", output: "", ...event.tool_start });
   if (event.tool_end) {

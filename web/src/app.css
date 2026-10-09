@@ -206,6 +206,7 @@ main { min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); grid-te
 }
 .msg.me { align-self: flex-end; background: var(--glass); white-space: pre-wrap; }
 .msg.error { color: var(--danger); }
+.turn > .msg.me { align-self: flex-end; }
 .turn { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: 100%; }
 
 /* tool use: dots turn into the tool's icon, and the label blurs into the tool name */

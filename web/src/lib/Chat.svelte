@@ -198,6 +198,13 @@
                   <div class="msg md">{@html render(s.text)}</div>
                 {/if}
               {/each}
+            {:else if p.type === "steer"}
+              <div class="msg me steer">
+                {#if p.images?.length}
+                  <div class="pics">{#each p.images as id}<a href="/api/files/{id}" target="_blank" rel="noopener"><img src="/api/files/{id}" alt="Attached" /></a>{/each}</div>
+                {/if}
+                {p.content}
+              </div>
             {:else if p.state !== "running"}
               <ToolChip part={p} />
               {#each p.images ?? [] as id}
