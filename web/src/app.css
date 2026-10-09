@@ -4,6 +4,8 @@
   --bg-1: #d3dbe3;
   --bg-2: #e7ded2;
   --bg-3: #dcdfd8;
+  --mesh-1: #e7e5e0; --mesh-2: #c5d0dc; --mesh-3: #eadac7; --mesh-4: #cdd8ca;
+  --grain: 0.16;
   --ink: #1d2228;
   --ink-soft: #66707a;
   --glass: rgba(255, 255, 255, 0.55);
@@ -26,6 +28,7 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #111317; --bg-1: #1a2230; --bg-2: #221e1c; --bg-3: #181c1b;
+    --mesh-1: #121418; --mesh-2: #1d293b; --mesh-3: #2b211c; --mesh-4: #16201c; --grain: 0.14;
     --ink: #e8eaee; --ink-soft: #9aa2ad;
     --glass: rgba(255, 255, 255, 0.07); --glass-strong: rgba(255, 255, 255, 0.13);
     --veil: rgba(17, 19, 23, 0.75); --line: rgba(255, 255, 255, 0.09);
@@ -35,6 +38,7 @@
 }
 :root[data-theme="dark"] {
   --bg: #111317; --bg-1: #1a2230; --bg-2: #221e1c; --bg-3: #181c1b;
+  --mesh-1: #121418; --mesh-2: #1d293b; --mesh-3: #2b211c; --mesh-4: #16201c; --grain: 0.14;
   --ink: #e8eaee; --ink-soft: #9aa2ad;
   --glass: rgba(255, 255, 255, 0.07); --glass-strong: rgba(255, 255, 255, 0.13);
   --veil: rgba(17, 19, 23, 0.75); --line: rgba(255, 255, 255, 0.09);
@@ -54,6 +58,16 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 button, textarea, input, select { font: inherit; color: inherit; }
+/* Grain + mesh backdrop (Settings > Background). The canvas is ~96px wide and stretched; the blur
+   hides its pixels, the scale hides the blur's soft edges, and the grain hides any banding. */
+:root[data-backdrop="mesh"] body { background-image: none; }
+.backdrop { display: none; }
+:root[data-backdrop="mesh"] .backdrop { display: block; position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+.backdrop canvas { position: absolute; inset: 0; width: 100%; height: 100%; filter: blur(24px); transform: scale(1.12); }
+.backdrop::after {
+  content: ""; position: absolute; inset: 0; opacity: var(--grain); mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 1'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
 button { cursor: pointer; border: 0; background: none; }
 button:disabled { cursor: default; opacity: 0.45; }
 a { color: inherit; }

@@ -1,8 +1,11 @@
 <script>
   import { api } from "./api.js";
   import { app } from "./store.svelte.js";
+  import { getBackdrop, setBackdrop } from "./backdrop.js";
 
   const s = $derived(app.settings);
+  let backdrop = $state(getBackdrop());
+  const chooseBackdrop = (v) => setBackdrop((backdrop = v));
   let keyInput = $state({});
   let note = $state({}); // key row messages, per provider: { text, kind }
   let modelNote = $state({}); // model row messages, per provider
@@ -345,6 +348,16 @@
             </div>
             <p class="status {sandboxNote.kind}">{sandboxNote.text}</p>
           {/if}
+        </div>
+        <div class="row">
+          <div class="row-head">
+            <span class="row-title">Background</span>
+            <div class="seg" role="group" aria-label="Background">
+              <button aria-pressed={backdrop === "plain"} onclick={() => chooseBackdrop("plain")}>Plain</button>
+              <button aria-pressed={backdrop === "mesh"} onclick={() => chooseBackdrop("mesh")}>Grain + mesh</button>
+            </div>
+          </div>
+          <p class="meta" style="margin:0">Remembered on this device.</p>
         </div>
         <div class="row">
           <div class="row-head">

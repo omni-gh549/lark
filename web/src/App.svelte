@@ -10,6 +10,7 @@
   import Gallery from "./lib/Gallery.svelte";
   import Panels from "./lib/Panels.svelte";
   import Login from "./lib/Login.svelte";
+  import { watchMesh } from "./lib/backdrop.js";
 
   const ROUTES = ["chat", "projects", "memory", "settings", "components"];
   const fromHash = () => {
@@ -23,6 +24,9 @@
   let menuEl = $state();
   let historyOpen = $state(false);
   let historyEl = $state();
+  let meshEl = $state();
+
+  $effect(() => watchMesh(meshEl));
 
   const toggleHistory = () => {
     historyOpen = !historyOpen;
@@ -78,6 +82,8 @@
 
   const active = $derived(app.settings ? app.settings.models[app.settings.provider] || "No model chosen" : "");
 </script>
+
+<div class="backdrop" aria-hidden="true"><canvas bind:this={meshEl}></canvas></div>
 
 {#if app.blocked}
   <div class="centre"><p class="status bad">{app.blocked}</p></div>
