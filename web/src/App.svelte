@@ -66,9 +66,14 @@
     };
     // iOS keeps the layout viewport put and slides the page when the keyboard opens: follow the visible area instead
     const vv = window.visualViewport;
+    // The app is pinned to the visible area (height and offset), so nothing ever scrolls or has to be put back.
     const fit = () => {
-      document.documentElement.style.setProperty("--vh", `${Math.round(vv.height)}px`);
-      if (vv.offsetTop || window.scrollY) window.scrollTo(0, 0);
+      const root = document.documentElement;
+      root.style.setProperty("--vh", `${Math.round(vv.height)}px`);
+      root.style.setProperty("--vt", `${Math.round(vv.offsetTop)}px`);
+      // with the keyboard up the home-indicator inset is covered, so it must not leave a gap
+      if (innerHeight - vv.height > 120) root.dataset.kb = "";
+      else delete root.dataset.kb;
     };
     if (vv) {
       fit();
