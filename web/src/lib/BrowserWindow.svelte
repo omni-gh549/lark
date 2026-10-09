@@ -59,6 +59,22 @@
     e.preventDefault();
     send({ type: "scroll", ...at(e), dy: e.deltaY });
   }
+  // dragging a finger over the page scrolls it (the stage is a scaled-down picture, so the distance is scaled up)
+  let touchY = 0, pending = 0, flush = 0;
+  function ontouchstart(e) {
+    touchY = e.touches[0].clientY;
+  }
+  function ontouchmove(e) {
+    const t = e.touches[0];
+    pending += (touchY - t.clientY) * 2.5;
+    touchY = t.clientY;
+    if (flush) return;
+    flush = setTimeout(() => {
+      flush = 0;
+      if (pending) send({ type: "scroll", ...at(t), dy: pending });
+      pending = 0;
+    }, 70);
+  }
   function onkeydown(e) {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const key = SPECIAL[e.key];
@@ -163,7 +179,7 @@
     <div class="glow" aria-hidden="true"></div>
     {#if control}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div class="takeover" {onclick} {onwheel}></div>
+      <div class="takeover" {onclick} {onwheel} {ontouchstart} {ontouchmove}></div>
       <textarea bind:this={sink} class="sink" rows="1" aria-label="Type into the browser" autocomplete="off" autocapitalize="off" spellcheck="false" {onkeydown} {oninput}></textarea>
     {/if}
    </div>

@@ -64,10 +64,23 @@
       else if (historyOpen) historyOpen = false;
       else panelsOpen = false;
     };
+    // iOS keeps the layout viewport put and slides the page when the keyboard opens: follow the visible area instead
+    const vv = window.visualViewport;
+    const fit = () => {
+      document.documentElement.style.setProperty("--vh", `${Math.round(vv.height)}px`);
+      if (vv.offsetTop || window.scrollY) window.scrollTo(0, 0);
+    };
+    if (vv) {
+      fit();
+      vv.addEventListener("resize", fit);
+      vv.addEventListener("scroll", fit);
+    }
     addEventListener("hashchange", onhash);
     document.addEventListener("click", onclick);
     document.addEventListener("keydown", onkey);
     return () => {
+      vv?.removeEventListener("resize", fit);
+      vv?.removeEventListener("scroll", fit);
       removeEventListener("hashchange", onhash);
       document.removeEventListener("click", onclick);
       document.removeEventListener("keydown", onkey);
@@ -150,7 +163,10 @@
       </div>
     </header>
 
-    {#if panelsOpen}<Panels />{/if}
+    {#if panelsOpen}
+      <button class="scrim" aria-label="Close panels" tabindex="-1" onclick={() => (panelsOpen = false)}></button>
+      <Panels />
+    {/if}
 
     <main>
       {#if route === "chat"}

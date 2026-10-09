@@ -69,7 +69,8 @@
   }
 
   function onkey(e) {
-    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    // on a phone the keyboard's Enter is a new line; the send button sends
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing && !matchMedia("(pointer: coarse)").matches) {
       e.preventDefault();
       submit();
     }
