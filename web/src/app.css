@@ -65,6 +65,7 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; -webkit-tap-highl
 body { overscroll-behavior: none; }
 html, body, #app { height: var(--app-h, 100%); }
 html { background-color: var(--bg); }
+:root[data-backdrop="mesh"] { background-color: var(--edge, var(--bg)); }
 body {
   font: 15px/1.45 var(--font);
   color: var(--ink);

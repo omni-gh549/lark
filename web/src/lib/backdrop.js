@@ -90,6 +90,12 @@ export function paintMesh(canvas) {
     }
   }
   ctx.putImageData(img, 0, 0);
+  // The colour along the bottom edge, for whatever lies past the page there (a home-screen app on iOS 26 can leave a
+  // strip at the bottom that the page can't paint into; only the root background shows in it).
+  const sum = [0, 0, 0];
+  for (let y = H - 6; y < H; y++) for (let x = 0; x < W; x++) for (let k = 0; k < 3; k++) sum[k] += img.data[(y * W + x) * 4 + k];
+  const n = 6 * W;
+  document.documentElement.style.setProperty("--edge", `rgb(${sum.map((v) => Math.round(v / n)).join(",")})`);
 }
 
 // Repaint when the colour scheme changes (system setting or the data-theme attribute).
