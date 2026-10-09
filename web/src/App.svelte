@@ -25,6 +25,34 @@
   let historyOpen = $state(false);
   let historyEl = $state();
   let meshEl = $state();
+  let probe = $state(""); // triple-tap the Chat/Projects switch to show how the browser measures the screen
+  let taps = [];
+  let probing = 0;
+  const measure = () => {
+    const vv = window.visualViewport;
+    const a = document.querySelector("#app")?.getBoundingClientRect();
+    const cs = getComputedStyle(document.documentElement);
+    const tip = document.createElement("div");
+    tip.style.cssText = "position:fixed;bottom:0;height:env(safe-area-inset-bottom)";
+    document.body.append(tip);
+    const sab = tip.getBoundingClientRect().height;
+    tip.remove();
+    probe = `inner ${innerWidth}x${innerHeight}  vv ${Math.round(vv.width)}x${Math.round(vv.height)} top ${Math.round(vv.offsetTop)}  screen ${screen.height}  app ${Math.round(a.top)}..${Math.round(a.bottom)}  sab ${sab}  kb ${document.documentElement.dataset.kb ?? "no"}  appH ${cs.getPropertyValue("--app-h") || "100%"}  scrollY ${scrollY}  standalone ${navigator.standalone}`;
+  };
+  const tripleTap = () => {
+    const now = Date.now();
+    taps = [...taps.filter((t) => now - t < 700), now];
+    if (taps.length < 3) return;
+    taps = [];
+    if (probing) {
+      clearInterval(probing);
+      probing = 0;
+      probe = "";
+    } else {
+      measure();
+      probing = setInterval(measure, 300);
+    }
+  };
 
   $effect(() => watchMesh(meshEl));
 
@@ -186,7 +214,7 @@
         {/if}
       </div>
 
-      <nav class="modes" aria-label="View">
+      <nav class="modes" aria-label="View" onclick={tripleTap}>
         <button aria-current={route === "chat" ? "page" : undefined} onclick={() => go("chat")}>Chat</button>
         <button aria-current={route === "projects" ? "page" : undefined} onclick={() => go("projects")}>Projects</button>
       </nav>
@@ -211,6 +239,7 @@
       </div>
     </header>
 
+    {#if probe}<div class="probe">{probe}</div>{/if}
     {#if panelsOpen}
       <button class="scrim" aria-label="Close panels" tabindex="-1" onclick={() => (panelsOpen = false)}></button>
       <Panels />

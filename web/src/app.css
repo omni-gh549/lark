@@ -457,3 +457,5 @@ main { min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); grid-te
   #app { position: fixed; inset: auto; left: 0; top: 0; width: 100%; transform: translateY(var(--vt)); }
   :root[data-kb] { --sab: 0px; }
 }
+
+.probe { position: fixed; z-index: 90; left: 8px; right: 8px; top: calc(var(--top) + 4px); padding: 8px 10px; border-radius: 12px; font: 11px/1.4 var(--mono); background: var(--glass-strong); backdrop-filter: blur(20px); pointer-events: none; overflow-wrap: anywhere; }
