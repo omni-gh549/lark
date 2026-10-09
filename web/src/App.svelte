@@ -85,20 +85,24 @@
       root.style.setProperty("--vt", "0px");
       delete root.dataset.kb;
     };
+    const FIELD = "textarea, input:not([type=file]), select";
+    const fielded = () => !!document.activeElement?.matches?.(FIELD);
+    // iOS can leave visualViewport stale after the keyboard goes away, so a closed keyboard is decided by focus, not by size
     const fit = () => {
       const lost = innerHeight - vv.height;
-      if (lost > 120) {
+      if (fielded() && lost > 120) {
         kbHeight = lost - vv.offsetTop;
         open(vv.height, vv.offsetTop);
-      } else close();
+      } else if (!fielded() || lost <= 120) close();
     };
+    const typing = (e) => e.target.matches?.(FIELD) && matchMedia("(pointer: coarse)").matches;
     // shrink the app the moment a field is focused, before iOS decides it has to pan to show it
-    const typing = (e) => e.target.matches?.("textarea, input:not([type=file]), select") && matchMedia("(pointer: coarse)").matches;
     const focusin = (e) => {
       if (typing(e) && kbHeight) open(innerHeight - kbHeight, 0);
     };
+    const settle = () => [60, 350, 800, 1500].forEach((ms) => setTimeout(fit, ms));
     const focusout = (e) => {
-      if (typing(e)) setTimeout(() => !document.activeElement?.matches?.("textarea, input, select") && close(), 60);
+      if (typing(e)) settle();
     };
     const savekb = () => {
       try {
@@ -109,6 +113,8 @@
       fit();
       vv.addEventListener("resize", fit);
       vv.addEventListener("scroll", fit);
+      addEventListener("resize", fit);
+      addEventListener("orientationchange", settle);
       document.addEventListener("focusin", focusin);
       document.addEventListener("focusout", focusout);
       addEventListener("pagehide", savekb);
@@ -120,6 +126,7 @@
     return () => {
       document.removeEventListener("focusin", focusin);
       document.removeEventListener("focusout", focusout);
+      removeEventListener("resize", fit);
       vv?.removeEventListener("resize", fit);
       vv?.removeEventListener("scroll", fit);
       removeEventListener("hashchange", onhash);
