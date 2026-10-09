@@ -107,9 +107,18 @@
       root.style.setProperty("--vt", `${Math.round(top)}px`);
       root.dataset.kb = "";
     };
+    // A home-screen app on iOS reports a layout height one status bar short of the screen (812 on a 874pt phone), which
+    // leaves a dead strip at the bottom. The screen is the truth there, while the keyboard is closed and the phone is upright.
+    const screenHeight = () => (navigator.standalone && innerHeight > innerWidth ? Math.max(innerHeight, screen.width, screen.height) : 0);
     const close = () => {
-      root.style.removeProperty("--vh");
-      root.style.removeProperty("--app-h");
+      const h = screenHeight();
+      if (h) {
+        root.style.setProperty("--vh", `${h}px`);
+        root.style.setProperty("--app-h", `${h}px`);
+      } else {
+        root.style.removeProperty("--vh");
+        root.style.removeProperty("--app-h");
+      }
       root.style.setProperty("--vt", "0px");
       delete root.dataset.kb;
     };
