@@ -4,8 +4,6 @@
   --bg-1: #d3dbe3;
   --bg-2: #e7ded2;
   --bg-3: #dcdfd8;
-  --mesh-1: #e7e5e0; --mesh-2: #c5d0dc; --mesh-3: #eadac7; --mesh-4: #cdd8ca;
-  --grain: 0.16;
   --ink: #1d2228;
   --ink-soft: #66707a;
   --glass: rgba(255, 255, 255, 0.55);
@@ -28,7 +26,6 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #111317; --bg-1: #1a2230; --bg-2: #221e1c; --bg-3: #181c1b;
-    --mesh-1: #121418; --mesh-2: #1d293b; --mesh-3: #2b211c; --mesh-4: #16201c; --grain: 0.14;
     --ink: #e8eaee; --ink-soft: #9aa2ad;
     --glass: rgba(255, 255, 255, 0.07); --glass-strong: rgba(255, 255, 255, 0.13);
     --veil: rgba(17, 19, 23, 0.75); --line: rgba(255, 255, 255, 0.09);
@@ -38,13 +35,22 @@
 }
 :root[data-theme="dark"] {
   --bg: #111317; --bg-1: #1a2230; --bg-2: #221e1c; --bg-3: #181c1b;
-  --mesh-1: #121418; --mesh-2: #1d293b; --mesh-3: #2b211c; --mesh-4: #16201c; --grain: 0.14;
   --ink: #e8eaee; --ink-soft: #9aa2ad;
   --glass: rgba(255, 255, 255, 0.07); --glass-strong: rgba(255, 255, 255, 0.13);
   --veil: rgba(17, 19, 23, 0.75); --line: rgba(255, 255, 255, 0.09);
   --accent: #e8eaee; --on-accent: #151b26; --live: #5cc28c; --danger: #e5776c;
   color-scheme: dark;
 }
+
+/* Backdrop palettes (Settings > Background). Mist is the default; each has a light and a dark set. */
+:root, :root[data-palette="mist"] { --mesh-1: #e8e9ec; --mesh-2: #c9d3e2; --mesh-3: #d8d3e4; --mesh-4: #e1e6ea; --grain: 0.16; }
+:root[data-palette="slate"] { --mesh-1: #e6e8eb; --mesh-2: #ccd4dd; --mesh-3: #b9c6d4; --mesh-4: #dde3e8; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --mesh-1: #121418; --mesh-2: #1c2233; --mesh-3: #241f2e; --mesh-4: #171c22; --grain: 0.14; }
+  :root:not([data-theme="light"])[data-palette="slate"] { --mesh-1: #111418; --mesh-2: #1a2433; --mesh-3: #222d3d; --mesh-4: #161b21; }
+}
+:root[data-theme="dark"] { --mesh-1: #121418; --mesh-2: #1c2233; --mesh-3: #241f2e; --mesh-4: #171c22; --grain: 0.14; }
+:root[data-theme="dark"][data-palette="slate"] { --mesh-1: #111418; --mesh-2: #1a2433; --mesh-3: #222d3d; --mesh-4: #161b21; }
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }

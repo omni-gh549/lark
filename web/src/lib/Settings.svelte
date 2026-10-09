@@ -1,10 +1,12 @@
 <script>
   import { api } from "./api.js";
   import { app } from "./store.svelte.js";
-  import { getBackdrop, setBackdrop } from "./backdrop.js";
+  import { getBackdrop, setBackdrop, getPalette, setPalette } from "./backdrop.js";
 
   const s = $derived(app.settings);
   let backdrop = $state(getBackdrop());
+  let palette = $state(getPalette());
+  const choosePalette = (v) => setPalette((palette = v));
   const chooseBackdrop = (v) => setBackdrop((backdrop = v));
   let keyInput = $state({});
   let note = $state({}); // key row messages, per provider: { text, kind }
@@ -357,6 +359,15 @@
               <button aria-pressed={backdrop === "mesh"} onclick={() => chooseBackdrop("mesh")}>Grain + mesh</button>
             </div>
           </div>
+          {#if backdrop === "mesh"}
+            <div class="row-head">
+              <span class="row-title">Theme</span>
+              <div class="seg" role="group" aria-label="Background theme">
+                <button aria-pressed={palette === "mist"} onclick={() => choosePalette("mist")}>Mist</button>
+                <button aria-pressed={palette === "slate"} onclick={() => choosePalette("slate")}>Slate</button>
+              </div>
+            </div>
+          {/if}
           <p class="meta" style="margin:0">Remembered on this device.</p>
         </div>
         <div class="row">

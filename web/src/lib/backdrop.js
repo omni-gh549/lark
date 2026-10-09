@@ -21,6 +21,23 @@ export const setBackdrop = (v) => {
   document.documentElement.dataset.backdrop = v;
 };
 
+const PKEY = "lark.palette"; // "mist" (default) or "slate"
+
+export const getPalette = () => {
+  try {
+    return localStorage.getItem(PKEY) === "slate" ? "slate" : "mist";
+  } catch {
+    return "mist";
+  }
+};
+
+export const setPalette = (v) => {
+  try {
+    localStorage.setItem(PKEY, v);
+  } catch {}
+  document.documentElement.dataset.palette = v;
+};
+
 const rgb = (hex) => {
   const h = hex.trim().replace("#", "");
   const n = parseInt(h.length === 3 ? h.replace(/./g, "$&$&") : h, 16);
@@ -77,12 +94,12 @@ export function paintMesh(canvas) {
 
 // Repaint when the colour scheme changes (system setting or the data-theme attribute).
 export function watchMesh(canvas) {
-  const paint = () => paintMesh(canvas);
+  const paint = () => requestAnimationFrame(() => paintMesh(canvas));
   paint();
   const mq = matchMedia("(prefers-color-scheme: dark)");
   mq.addEventListener("change", paint);
   const mo = new MutationObserver(paint);
-  mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-palette"] });
   return () => {
     mq.removeEventListener("change", paint);
     mo.disconnect();
