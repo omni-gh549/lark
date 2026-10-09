@@ -97,9 +97,9 @@
     // home indicator). While it is open the app is pinned to the visible area, so nothing scrolls or has to be put back.
     const vv = window.visualViewport;
     const root = document.documentElement;
-    let kbHeight = 0;
+    let kbHeight = 334; // a typical iPhone keyboard; replaced by what this device really shows
     try {
-      kbHeight = Number(localStorage.getItem("lark.kb")) || 0;
+      kbHeight = Number(localStorage.getItem("lark.kb")) || kbHeight;
     } catch {}
     const open = (visible, top) => {
       root.style.setProperty("--vh", `${Math.round(visible)}px`);
@@ -107,18 +107,9 @@
       root.style.setProperty("--vt", `${Math.round(top)}px`);
       root.dataset.kb = "";
     };
-    // A home-screen app on iOS reports a layout height one status bar short of the screen (812 on a 874pt phone), which
-    // leaves a dead strip at the bottom. The screen is the truth there, while the keyboard is closed and the phone is upright.
-    const screenHeight = () => (navigator.standalone && innerHeight > innerWidth ? Math.max(innerHeight, screen.width, screen.height) : 0);
     const close = () => {
-      const h = screenHeight();
-      if (h) {
-        root.style.setProperty("--vh", `${h}px`);
-        root.style.setProperty("--app-h", `${h}px`);
-      } else {
-        root.style.removeProperty("--vh");
-        root.style.removeProperty("--app-h");
-      }
+      root.style.removeProperty("--vh");
+      root.style.removeProperty("--app-h");
       root.style.setProperty("--vt", "0px");
       delete root.dataset.kb;
     };
@@ -128,7 +119,8 @@
     const fit = () => {
       const lost = innerHeight - vv.height;
       if (fielded() && lost > 120) {
-        kbHeight = lost - vv.offsetTop;
+        kbHeight = lost;
+        savekb();
         open(vv.height, vv.offsetTop);
       } else if (!fielded() || lost <= 120) close();
     };
