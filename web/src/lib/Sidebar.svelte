@@ -7,7 +7,6 @@
   let { route, go, wide = $bindable(), drawer = $bindable(), panelsOpen = $bindable() } = $props();
 
   let menuOpen = $state(false);
-  let accountEl = $state();
   let searching = $state(false);
   let query = $state("");
   let searchEl = $state();
@@ -67,7 +66,7 @@
   onMount(() => {
     refreshList();
     const onclick = (e) => {
-      if (menuOpen && accountEl && !accountEl.contains(e.target)) menuOpen = false;
+      if (menuOpen && !e.target.closest?.(".side-foot")) menuOpen = false;
     };
     const onkey = (e) => {
       if (e.key !== "Escape") return;
@@ -91,9 +90,11 @@
 <aside class="side" class:wide class:drawer aria-label="Sidebar">
   <!-- slim rail: always there on wide screens while the panel is closed -->
   <div class="rail-icons">
-    <button class="side-btn logo" aria-label="Lark home" title="Lark" onclick={() => section("chat")}>L</button>
-    <button class="side-btn" aria-label="Open sidebar" title="Open sidebar" onclick={() => (wide = true)}>
+    <button class="side-btn" aria-label="Sidebar" title={wide ? "Close sidebar" : "Open sidebar"} aria-expanded={wide} onclick={() => (wide = !wide)}>
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M9.5 4.5v15"/></svg>
+    </button>
+    <button class="side-btn" aria-label="Home" title="Home" aria-current={route === "chat" ? "page" : undefined} onclick={() => section("chat")}>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 11 12 4.5l7.5 6.5V19a1 1 0 0 1-1 1H15v-5.5H9V20H5.5a1 1 0 0 1-1-1z"/></svg>
     </button>
     <button class="side-btn" aria-label="New chat" title="New chat" onclick={fresh}>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h8M4 20l1-4L16 5l3 3L8 19z"/></svg>
@@ -110,6 +111,19 @@
     <button class="side-btn" aria-label="Memory" title="Memory" aria-current={route === "memory" ? "page" : undefined} onclick={() => section("memory")}>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 4.500 8 4-8 4-8-4z"/><path d="m4 12.500 8 4 8-4M4 16.500l8 4 8-4"/></svg>
     </button>
+    <span class="grow"></span>
+    <div class="side-foot rail-foot">
+      <button class="side-btn avatar-btn" aria-label="Account" aria-expanded={menuOpen} onclick={() => (menuOpen = !menuOpen)}>
+        <span class="avatar"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="9" r="3.5"/><path d="M5 20c1-3.6 3.8-5.5 7-5.5s6 1.9 7 5.5"/></svg></span>
+      </button>
+      {#if menuOpen}
+        <div class="menu side-menu">
+          <div class="menu-head"><span class="menu-sub">{active}</span></div>
+          <button onclick={() => section("settings")}>Settings</button>
+          {#if app.settings?.auth}<hr /><button onclick={signOut}>Sign out</button>{/if}
+        </div>
+      {/if}
+    </div>
   </div>
 
   <!-- expanded panel (also the phone drawer) -->
@@ -132,20 +146,21 @@
       <input class="side-search" bind:this={searchEl} bind:value={query} placeholder="Search chats" aria-label="Search chats" />
     {/if}
 
-    <nav class="side-nav" aria-label="Sections">
-      <button onclick={fresh}>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h8M4 20l1-4L16 5l3 3L8 19z"/></svg>New chat
-      </button>
+    <button class="side-new" onclick={fresh}>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h8M4 20l1-4L16 5l3 3L8 19z"/></svg>New chat
+    </button>
+
+    <nav class="side-nav phone-only" aria-label="Sections">
       <button aria-pressed={panelsOpen} onclick={togglePanels}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg>Panels
       </button>
-      <button aria-current={route === "projects" ? "page" : undefined} onclick={() => section("projects")}>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5a2 2 0 0 1 2-2h3.2l2 2.2H18a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg>Projects
-      </button>
       <button aria-current={route === "memory" ? "page" : undefined} onclick={() => section("memory")}>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 4.500 8 4-8 4-8-4z"/><path d="m4 12.500 8 4 8-4M4 16.500l8 4 8-4"/></svg>Memory
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 4.5 8 4-8 4-8-4z"/><path d="m4 12.5 8 4 8-4M4 16.5l8 4 8-4"/></svg>Memory
       </button>
     </nav>
+
+    <button class="side-label link" onclick={() => section("projects")}>Projects</button>
+    <p class="side-empty">No projects</p>
 
     <div class="side-label">Recents</div>
     <div class="side-list">
@@ -165,18 +180,15 @@
     </div>
   </div>
 
-  <div class="side-foot" bind:this={accountEl}>
-    <button class="side-me" aria-label="Account" aria-expanded={menuOpen} aria-controls="account-menu" onclick={() => (menuOpen = !menuOpen)}>
+  <div class="side-foot panel-foot phone-only">
+    <button class="side-me" aria-label="Account" aria-expanded={menuOpen} onclick={() => (menuOpen = !menuOpen)}>
       <span class="avatar"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="9" r="3.5"/><path d="M5 20c1-3.6 3.8-5.5 7-5.5s6 1.9 7 5.5"/></svg></span>
       <span class="side-me-text"><span>Account</span><small>{active}</small></span>
     </button>
     {#if menuOpen}
-      <div class="menu side-menu" id="account-menu">
+      <div class="menu side-menu">
         <button onclick={() => section("settings")}>Settings</button>
-        {#if app.settings?.auth}
-          <hr />
-          <button onclick={signOut}>Sign out</button>
-        {/if}
+        {#if app.settings?.auth}<hr /><button onclick={signOut}>Sign out</button>{/if}
       </div>
     {/if}
   </div>
