@@ -140,9 +140,6 @@
       <button class="side-btn" aria-label="Search chats" title="Search chats" aria-pressed={searching} onclick={() => (searching ? endSearch() : find())}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
       </button>
-      <button class="side-btn collapse" aria-label="Close sidebar" title="Close sidebar" onclick={() => { wide = false; drawer = false; }}>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M9.5 4.5v15"/></svg>
-      </button>
       <button class="side-btn drawer-close" aria-label="Close sidebar" onclick={() => (drawer = false)}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>
       </button>

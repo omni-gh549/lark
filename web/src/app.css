@@ -448,7 +448,6 @@ main { min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); grid-te
   .side-scrim { display: block; z-index: 5; }
   .side .rail-icons { display: none; }
   .side .side-panel { display: flex; background: var(--rail); border: 0; }
-  .side .collapse { display: none; }
   .side .drawer-close { display: grid; }
   .phone-only { display: block; }
   .side-nav.phone-only { display: flex; }
