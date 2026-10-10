@@ -375,7 +375,7 @@ async def _from_owner(chat_id: int, text: str, photo):
     conf = main.ready()
     if not isinstance(conf, tuple):
         return await say(chat_id, "Lark isn't set up to answer yet. Add a model key in Settings on the web app.")
-    user = {"role": "user", "content": text}
+    user = {"role": "user", "content": text, "via": "telegram"}  # the reply goes back to Telegram, not to the web app
     if photo:
         data = await download(photo[-1]["file_id"])
         if data:
@@ -396,17 +396,20 @@ async def _from_owner(chat_id: int, text: str, photo):
 
 async def _relay_owner(run):
     """Follows a run in the owner's chat and sends its replies to Telegram. Started by runs for every run, including
-    follow-ups to queued messages and replies resumed after a restart."""
+    follow-ups to queued messages and replies resumed after a restart. The chat is shared with the web app, so only
+    what was asked on Telegram is answered there: a reply to a web message stays in the web app."""
     chat_id = owner_id()
     if not chat_id:
         return
+    on_tg = run.via == "telegram"
 
     async def typing():
         while not run.finished:
-            try:
-                await api("sendChatAction", chat_id=chat_id, action="typing")
-            except TelegramError:
-                pass
+            if on_tg:
+                try:
+                    await api("sendChatAction", chat_id=chat_id, action="typing")
+                except TelegramError:
+                    pass
             await asyncio.sleep(4)
 
     ticker = asyncio.ensure_future(typing())
@@ -415,7 +418,7 @@ async def _relay_owner(run):
     async def flush():
         nonlocal buf, sent_any
         text, buf = buf.strip(), ""
-        for piece in (_pieces(text) if text else []):
+        for piece in (_pieces(text) if text and on_tg else []):
             try:
                 await say(chat_id, piece)
                 sent_any = True
@@ -423,14 +426,19 @@ async def _relay_owner(run):
                 health.record("telegram", f"could not send a reply: {e}")
 
     try:
-        if run.resumed:
+        if run.resumed and on_tg:
             try:
                 await say(chat_id, "Sorry, I got restarted. Picking up where I was.")
             except TelegramError:
                 pass
         # Like a person given a job: a short acknowledgement first, then the result. Narration between steps is not sent.
         async for ev in run.stream(run.skip):
-            if "text" in ev:
+            if "steer" in ev:  # a message sent mid-run: its answer goes to whichever app it came from
+                now_tg = ev["steer"].get("via") == "telegram"
+                if now_tg != on_tg:
+                    buf, mid, acked = "", "", False
+                on_tg = now_tg
+            elif "text" in ev:
                 buf += ev["text"]
             elif "tool_start" in ev:
                 if not acked and not run.resumed and buf.strip():
@@ -441,7 +449,7 @@ async def _relay_owner(run):
                 else:
                     buf = ""
             elif "tool_end" in ev:
-                for name in ev["tool_end"].get("images", []):
+                for name in ev["tool_end"].get("images", []) if on_tg else []:
                     try:
                         await send_photo(chat_id, name)
                         sent_any = True
@@ -460,7 +468,7 @@ async def _relay_owner(run):
     if not buf.strip() and mid.strip():
         buf = mid  # the reply ended on a tool step: what it said last is still the answer
     await flush()
-    if not sent_any and not stopped and not run.discard and not run.interrupted:
+    if on_tg and not sent_any and not stopped and not run.discard and not run.interrupted:
         try:
             await say(chat_id, error or "(No reply.)")
         except TelegramError:

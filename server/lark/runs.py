@@ -38,6 +38,7 @@ class Run:
         self.skip = 0  # events that were replayed from before a restart (followers must not repeat them)
         self.attempts = 0
         self.steer: list[dict] = []  # messages sent mid-run, waiting for the next step
+        self.via = "web"  # where the latest message in this run came from ("web" or "telegram"): the reply goes back there
         self._journaled = 0.0
 
     def push(self, ev: dict):
@@ -68,6 +69,16 @@ class Run:
                     await w.wait()
         finally:
             self.waiters.discard(w)
+
+
+def surface(chat_id: str) -> str:
+    """Where the newest message in a chat came from. The owner's Telegram chat is also open in the web app, so the
+    same chat takes messages from both; the answer belongs on the one that asked."""
+    doc = chats.load(chat_id)
+    for m in reversed((doc or {}).get("messages", [])):
+        if m.get("role") == "user":
+            return "telegram" if m.get("via") == "telegram" else "web"
+    return "web"
 
 
 def running() -> int:
@@ -208,6 +219,7 @@ async def resume_all():
 async def _execute(run: Run, name: str, key: str, model: str, history: list[dict]):
     error = None
     memory.CURRENT_CHAT.set(run.chat_id)  # the memory tools record where a note came from
+    memory.CURRENT_VIA.set(run.via)
     try:
         try:
             notes = await memory.context(run.chat_id, history)
@@ -219,7 +231,7 @@ async def _execute(run: Run, name: str, key: str, model: str, history: list[dict
                 notes = f"{telegram.owner_brief()}\n\n{notes}".strip()
             except Exception:
                 pass  # a problem with contacts must never stop a reply
-        if run.chat_id == "telegram-owner":
+        if run.chat_id == "telegram-owner" and run.via == "telegram":
             notes = f"{agent.TELEGRAM_PROMPT}\n\n{notes}".strip()
         elif not memory.is_contact_chat(run.chat_id) and vault.load()["generative_ui"]:
             notes = f"{notes}\n\n{agent.ui_prompt()}".strip()  # the web chat can draw tables, plans and checklists
@@ -291,6 +303,7 @@ def start(chat_id: str, name: str, key: str, model: str, history: list[dict], at
     run = Run(chat_id)
     run.conf = (name, key, model)
     run.attempts = attempts
+    run.via = surface(chat_id)
     if prior:
         run.events = list(prior)  # what the chat showed before the restart; clients replay it
         run.skip = len(prior)
@@ -311,6 +324,8 @@ def _take_steer(run: Run) -> list[dict]:
     run.queued = max(0, run.queued - len(taken))
     for u in taken:
         run.push({"steer": u})  # clients show it where it was taken, and the saved chat keeps that order
+        run.via = "telegram" if u.get("via") == "telegram" else "web"
+        memory.CURRENT_VIA.set(run.via)
     out = history_builder(taken)
     for m in out:
         if isinstance(m["content"], str):

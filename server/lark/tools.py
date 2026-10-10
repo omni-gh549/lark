@@ -225,7 +225,7 @@ async def request_login(args: dict):
     event = asyncio.Event()
     LOGIN.update(pending={"site": site[:120], "reason": reason[:300]}, event=event, took_over=False)
     await sandbox.browser_hold(True)
-    if memory.CURRENT_CHAT.get() == telegram.OWNER_CHAT:
+    if memory.CURRENT_CHAT.get() == telegram.OWNER_CHAT and memory.CURRENT_VIA.get() == "telegram":
         try:
             await telegram.notify_owner(f"I need you to sign in{' to ' + site if site else ''}. Open Lark on the web and tap Take over on the browser window.")
         except telegram.TelegramError:

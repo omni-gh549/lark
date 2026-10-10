@@ -33,6 +33,7 @@ from . import chats, providers, vault
 
 KINDS = ("fact", "preference", "person", "project", "plan", "event")
 CURRENT_CHAT: contextvars.ContextVar[str | None] = contextvars.ContextVar("current_chat", default=None)
+CURRENT_VIA: contextvars.ContextVar[str] = contextvars.ContextVar("current_via", default="web")  # which surface asked: "web" or "telegram"
 
 MAX_FACT = 300
 MAX_FACTS = 5000

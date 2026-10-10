@@ -451,6 +451,18 @@ run("link code is single use", c.get("/api/telegram").json()["owner"] == {"name"
 say_to_bot(111, "hello there", "Oscar")
 run("owner chat reaches the agent", any("Echo: hello there" in m["text"] for m in msgs(111)))
 run("owner chat is saved", telegram.OWNER_CHAT in [x["id"] for x in c.get("/api/chats").json()["chats"]])
+# the owner's Telegram chat is also open in the web app: an answer to a web message stays in the web app
+_before = len(sent)
+c.post(f"/api/chats/{telegram.OWNER_CHAT}/send", json={"content": "from the web app"})
+_end = time.time() + 15
+time.sleep(0.2)
+from lark import runs as _rr  # noqa: E402
+while _rr.get(telegram.OWNER_CHAT) and time.time() < _end:
+    time.sleep(0.1)
+time.sleep(0.3)
+run("a web message in the owner chat is not answered on Telegram", len(sent) == _before)
+_doc = c.get(f"/api/chats/{telegram.OWNER_CHAT}").json()
+run("...but the answer is saved in the chat", any("Echo: from the web app" in (m.get("content") or "") for m in _doc["messages"]))
 say_to_bot(111, "/new", "Oscar")
 
 inv = c.post("/api/telegram/invites", json={"name": "Sam", "policy": "draft", "scope": "arrange dinner"}).json()["url"]
