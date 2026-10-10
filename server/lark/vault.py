@@ -48,12 +48,19 @@ def _fernet() -> Fernet:
 TIERS = ("cheap", "balanced", "smart")  # the composer slider: three models, from cheap to intelligent
 
 
+# Picked on the Pareto frontier of Artificial Analysis Intelligence Index vs OpenRouter price (2026-10-10).
+DEFAULT_TIERS = {"cheap": "xiaomi/mimo-v2.6-flash", "balanced": "xiaomi/mimo-v2.6-pro", "smart": "openai/gpt-6.1-sol"}
+# Earlier defaults: a saved copy of these was never chosen by the user, so it follows the current defaults.
+OLD_DEFAULT_TIERS = [{"cheap": "qwen/qwen3.7-flash", "balanced": "deepseek/deepseek-v4.1-flash", "smart": "deepseek/deepseek-v4-pro"}]
+
 # Suggested cheap models, used until you pick your own (OpenRouter only; empty elsewhere).
-SUGGESTED = {"openrouter": {"tiers": {"cheap": "qwen/qwen3.7-flash", "balanced": "deepseek/deepseek-v4.1-flash", "smart": "deepseek/deepseek-v4-pro"}, "memory_model": "qwen/qwen3.7-flash", "title_model": "qwen/qwen3.7-flash", "embedding_model": "qwen/qwen3-embedding-8b"}}
+SUGGESTED = {"openrouter": {"tiers": DEFAULT_TIERS, "memory_model": "qwen/qwen3.7-flash", "title_model": "qwen/qwen3.7-flash", "embedding_model": "qwen/qwen3-embedding-8b"}}
 
 
 def load() -> dict:
     data = json.loads(SETTINGS.read_text()) if SETTINGS.exists() else {}
+    if data.get("tiers") in OLD_DEFAULT_TIERS:
+        del data["tiers"]
     for k, v in SUGGESTED.get(data.get("provider", DEFAULTS["provider"]), {}).items():
         if not os.environ.get("LARK_NO_SUGGESTED") and k not in data:
             data[k] = v
