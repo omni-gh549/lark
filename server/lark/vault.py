@@ -45,8 +45,11 @@ def _fernet() -> Fernet:
     return Fernet(MASTER.read_bytes().strip())
 
 
+TIERS = ("cheap", "balanced", "smart")  # the composer slider: three models, from cheap to intelligent
+
+
 # Suggested cheap models, used until you pick your own (OpenRouter only; empty elsewhere).
-SUGGESTED = {"openrouter": {"memory_model": "qwen/qwen3.7-flash", "title_model": "qwen/qwen3.7-flash", "embedding_model": "qwen/qwen3-embedding-8b"}}
+SUGGESTED = {"openrouter": {"tiers": {"cheap": "qwen/qwen3.7-flash", "balanced": "deepseek/deepseek-v4.1-flash", "smart": "deepseek/deepseek-v4-pro"}, "memory_model": "qwen/qwen3.7-flash", "title_model": "qwen/qwen3.7-flash", "embedding_model": "qwen/qwen3-embedding-8b"}}
 
 
 def load() -> dict:
@@ -65,6 +68,7 @@ def load() -> dict:
         "memory_model": str(data.get("memory_model", DEFAULTS["memory_model"])),
         "title_model": str(data.get("title_model", DEFAULTS["title_model"])),
         "embedding_model": str(data.get("embedding_model", DEFAULTS["embedding_model"])),
+        "tiers": {k: str(v).strip() for k, v in (data.get("tiers") or {}).items() if k in TIERS},
         "keys": data.get("keys", {}),
     }
 
@@ -78,8 +82,10 @@ def _save(data: dict):
     os.replace(tmp, SETTINGS)
 
 
-def update(provider=None, models=None, search=None, browser_cookies=None, memory_use=None, memory_learn=None, embedding_model=None, memory_model=None, generative_ui=None, title_model=None):
+def update(provider=None, models=None, search=None, browser_cookies=None, memory_use=None, memory_learn=None, embedding_model=None, memory_model=None, generative_ui=None, title_model=None, tiers=None):
     data = load()
+    if tiers is not None:
+        data["tiers"] = {k: v.strip()[:200] for k, v in tiers.items() if k in TIERS and v.strip()}
     if generative_ui is not None:
         data["generative_ui"] = bool(generative_ui)
     if browser_cookies is not None:

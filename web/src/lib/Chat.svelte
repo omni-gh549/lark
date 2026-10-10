@@ -7,6 +7,7 @@
   import ToolStatus from "./ToolStatus.svelte";
   import ToolChip from "./ToolChip.svelte";
   import BrowserWindow from "./BrowserWindow.svelte";
+  import ModelDial from "./ModelDial.svelte";
   import { uploadImage } from "./upload.js";
 
   let { onsettings } = $props();
@@ -248,6 +249,7 @@
         {#if note}<span class="status bad">{note}</span>{/if}
       </div>
     {/if}
+    <ModelDial />
     <form class="composer" onsubmit={(e) => { e.preventDefault(); submit(); }}
       ondragover={(e) => e.preventDefault()} ondrop={(e) => { e.preventDefault(); addFiles(e.dataTransfer.files); }}>
       <button type="button" class="attach" aria-label="Attach image" onclick={() => picker.click()}>
