@@ -17,7 +17,7 @@
   const index = $derived(ready ? NAMES.findIndex((n) => s.tiers[n] === s.models[s.provider]) : -1);
   const stop = $derived(chosen ?? (index < 0 ? 1 : index));
   const shown = $derived(drag === null ? stop : Math.round(drag * 2));
-  const at = $derived(drag === null ? stop / 2 : drag);
+  const at = $derived(shown / 2); // the thumb sits on a stop, even mid-drag
   const x = (f, off = R) => `calc(${f} * (100% - ${2 * R}px) + ${off}px)`;
 
   async function pick(i) {
@@ -134,6 +134,5 @@
     background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
     transition: left .25s cubic-bezier(.3, .8, .3, 1), transform .15s;
   }
-  .dragging .thumb, .dragging .fill { transition: none; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
