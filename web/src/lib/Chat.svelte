@@ -7,6 +7,7 @@
   import ToolStatus from "./ToolStatus.svelte";
   import ToolChip from "./ToolChip.svelte";
   import BrowserWindow from "./BrowserWindow.svelte";
+  import ModelDial from "./ModelDial.svelte";
   import { uploadImage } from "./upload.js";
 
   let { onsettings } = $props();
@@ -264,6 +265,7 @@
         placeholder="Message Lark"
         aria-label="Message Lark"
       ></textarea>
+      <ModelDial />
       {#if chat.busy && !text.trim() && !attachments.length}
         <button type="button" class="send" aria-label="Stop" onclick={stop}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/></svg>
