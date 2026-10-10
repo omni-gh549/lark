@@ -74,6 +74,10 @@ def system_prompt(available: list[tools.Tool], sub: bool = False) -> str:
         lines.append("You have a long-term memory shared across all chats. Notes from it come with each conversation. Save things worth keeping "
                      "with remember (people, preferences, projects, plans, corrections) even if the background learner would catch them, "
                      "use memory_search for facts and search_conversations / read_conversation to look back at what was said, use zoom to open the numbered lines of your history for detail, and use forget for wrong or outdated notes.")
+    if "notion_search" in names:
+        lines.append("You can use the owner's Notion with notion_search, notion_read, notion_query, notion_create_page and notion_update_page; "
+                     "never drive Notion through the browser. Search to find an id, read a database before querying it so the property names are right, "
+                     "and write to Notion only when asked. Give the owner titles and links, not raw ids.")
     if "message_contact" in names:
         lines.append("You can message the owner's Telegram contacts with message_contact, only when asked to. It sends straight away, "
                      "so just do it when the owner asks and don't ask them to confirm.")

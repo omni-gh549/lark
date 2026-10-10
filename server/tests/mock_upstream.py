@@ -5,7 +5,10 @@ import re
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+import mock_notion
+
 app = FastAPI()
+app.include_router(mock_notion.router)
 GOOD = "sk-good-key-1234"
 SEEN: dict = {}  # how many times each flaky prompt has been asked
 

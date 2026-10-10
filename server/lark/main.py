@@ -11,9 +11,9 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import agent, auth, chats, files, health, memory, providers, runs, sandbox, search, telegram, timeline, titles, tools, vault
+from . import agent, auth, chats, files, health, memory, notion, providers, runs, sandbox, search, telegram, timeline, titles, tools, vault
 
-KEY_NAMES = set(providers.PROVIDERS) | set(search.SEARCH_PROVIDERS) | {"telegram"}
+KEY_NAMES = set(providers.PROVIDERS) | set(search.SEARCH_PROVIDERS) | {"telegram", "notion"}
 DIST = Path(os.environ.get("LARK_DIST", Path(__file__).resolve().parents[2] / "web" / "dist"))
 
 @asynccontextmanager
@@ -130,6 +130,7 @@ def view_settings() -> dict:
             for name, p in providers.PROVIDERS.items()
         },
         "telegram": {"label": "Telegram bot", "keys_url": "https://t.me/BotFather", "key_hint": vault.key_hint("telegram")},
+        "notion": {"label": notion.NOTION["label"], "keys_url": notion.NOTION["keys_url"], "key_hint": vault.key_hint("notion")},
         "search_providers": {
             name: {"label": p["label"], "keys_url": p["keys_url"], "key_hint": vault.key_hint(name)}
             for name, p in search.SEARCH_PROVIDERS.items()
@@ -204,6 +205,8 @@ async def test_key(name: str):
         if name == "telegram":
             me = await telegram.api("getMe", key)
             return {"ok": True, "detail": f"Bot @{me['username']} is reachable."}
+        if name == "notion":
+            return {"ok": True, "detail": await notion.check(key)}
         if name in search.SEARCH_PROVIDERS:
             rows = await search.search(name, key, "test", 1)
             return {"ok": True, "detail": "Key works." if rows is not None else ""}

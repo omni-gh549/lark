@@ -7,7 +7,7 @@ import base64
 import re
 import time
 
-from . import files, memory, sandbox, search, vault
+from . import files, memory, notion, sandbox, search, vault
 
 MAX_OUTPUT = 12_000
 
@@ -366,6 +366,102 @@ MEMORY_TOOLS = [
 ]
 
 
+def notion_ready() -> bool:
+    return bool(vault.get_key("notion"))
+
+
+async def _notion(fn, *args):
+    key = vault.get_key("notion")
+    if not key:
+        raise ToolError("Notion has no token.")
+    try:
+        return clip(await fn(key, *args))
+    except notion.NotionError as e:
+        raise ToolError(str(e))
+
+
+def _opt_str(args: dict, key: str) -> str | None:
+    v = args.get(key)
+    return v if isinstance(v, str) and v.strip() else None
+
+
+def _limit(args: dict, default: int = 10) -> int:
+    v = args.get("limit")
+    return v if isinstance(v, int) and v > 0 else default
+
+
+def _json_obj(args: dict, key: str, kind: type):
+    v = args.get(key)
+    if v in (None, "", {}, []):
+        return None
+    try:
+        v = notion.json_arg(v, key)
+    except notion.NotionError as e:
+        raise ToolError(str(e))
+    if not isinstance(v, kind):
+        raise ToolError(f"'{key}' must be a JSON {'object' if kind is dict else 'list'}.")
+    return v
+
+
+async def notion_search(args: dict):
+    kind = args.get("kind")
+    return await _notion(notion.search, str(args.get("query") or "").strip(), kind if kind in ("page", "database") else None, _limit(args))
+
+
+async def notion_read(args: dict):
+    return await _notion(notion.read, _str(args, "id"))
+
+
+async def notion_query(args: dict):
+    return await _notion(notion.query, _str(args, "database_id"), _json_obj(args, "filter", dict),
+                         _json_obj(args, "sorts", list), _limit(args, 20), _opt_str(args, "cursor"))
+
+
+async def notion_create_page(args: dict):
+    return await _notion(notion.create_page, _str(args, "parent_id"), str(args.get("title") or ""),
+                         _json_obj(args, "properties", dict), _opt_str(args, "content"))
+
+
+async def notion_update_page(args: dict):
+    archived = args.get("archived")
+    return await _notion(notion.update_page, _str(args, "page_id"), args["title"] if isinstance(args.get("title"), str) else None,
+                         _json_obj(args, "properties", dict), archived if isinstance(archived, bool) else None, _opt_str(args, "append"))
+
+
+NOTION_TOOLS = [
+    Tool("notion_search", "Notion search",
+         "Search the owner's Notion workspace by title. Returns pages and databases with their ids and links. "
+         "Only what has been shared with the integration is visible. An empty query lists the most recently edited items. kind limits to page or database.",
+         _obj({"query": {"type": "string"}, "kind": {"type": "string", "enum": ["page", "database"]}, "limit": {"type": "integer"}}, []),
+         notion_search, lambda a: str(a.get("query", ""))[:100] or "recent"),
+    Tool("notion_read", "Notion read",
+         "Read a Notion page (its properties and content as text) or a database (its properties and their options). Takes a page or database id or a notion.so link.",
+         _obj({"id": {"type": "string"}}, ["id"]), notion_read, lambda a: str(a.get("id", ""))[:100]),
+    Tool("notion_query", "Notion query",
+         "List the pages of a Notion database, optionally filtered and sorted with Notion's filter and sorts format "
+         "(e.g. filter {\"property\": \"Status\", \"status\": {\"equals\": \"Done\"}}, sorts [{\"property\": \"Due\", \"direction\": \"ascending\"}]). "
+         "Read the database first to see its property names and types. Long results come back with a cursor to pass next.",
+         _obj({"database_id": {"type": "string"}, "filter": {"type": "object"}, "sorts": {"type": "array", "items": {"type": "object"}},
+               "limit": {"type": "integer"}, "cursor": {"type": "string"}}, ["database_id"]),
+         notion_query, lambda a: str(a.get("database_id", ""))[:100]),
+    Tool("notion_create_page", "Notion create page",
+         "Create a page in Notion under a parent page or in a database (parent_id: an id or link). title names it. For a database, properties maps "
+         "property names to plain values (text, number, a select option name, a list for multi-select or relation ids, a checkbox boolean, a date "
+         "like 2026-10-12 or 2026-10-12/2026-10-14). content is the body in simple markdown (#, -, [ ], 1., >, ```, **bold**, links). "
+         "Use it only when the owner asks you to write to Notion.",
+         _obj({"parent_id": {"type": "string"}, "title": {"type": "string"}, "properties": {"type": "object"}, "content": {"type": "string"}},
+              ["parent_id", "title"]),
+         notion_create_page, lambda a: str(a.get("title", ""))[:100]),
+    Tool("notion_update_page", "Notion update page",
+         "Change an existing Notion page: title, properties (plain values by name, as in notion_create_page), archived (true moves it to the trash, "
+         "false restores it) and append (markdown added at the end of the page). It can't edit or delete existing text. "
+         "Use it only when the owner asks you to change Notion.",
+         _obj({"page_id": {"type": "string"}, "title": {"type": "string"}, "properties": {"type": "object"},
+               "archived": {"type": "boolean"}, "append": {"type": "string"}}, ["page_id"]),
+         notion_update_page, lambda a: str(a.get("title") or a.get("page_id", ""))[:100]),
+]
+
+
 async def message_contact(args: dict):
     from . import telegram
     image, missed = "", ""
@@ -437,6 +533,8 @@ async def available() -> list[Tool]:
         tools.append(WEB_SEARCH)
     if memory.enabled():
         tools += MEMORY_TOOLS
+    if notion_ready():
+        tools += NOTION_TOOLS
     if telegram.contacts_ready():
         tools.append(MESSAGE_CONTACT)
     if telegram.owner_ready():

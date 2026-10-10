@@ -23,7 +23,8 @@ for _k in ("LARK_SANDBOX_URL", "LARK_SANDBOX_TOKEN"):
 os.environ["LARK_NO_SUGGESTED"] = "1"  # tests start with no suggested memory models
 
 import mock_upstream  # noqa: E402
-from lark import providers, search, vault  # noqa: E402
+import mock_notion  # noqa: E402
+from lark import notion, providers, search, vault  # noqa: E402
 from lark.main import app  # noqa: E402
 
 import socket  # noqa: E402
@@ -44,6 +45,7 @@ for p in providers.PROVIDERS.values():
     p["base"] = f"http://127.0.0.1:{UPSTREAM}"
 
 search.SEARCH_PROVIDERS["brave"]["base"] = f"http://127.0.0.1:{UPSTREAM}/brave"
+notion.NOTION["base"] = f"http://127.0.0.1:{UPSTREAM}/notion/v1"
 sbx = subprocess.Popen([sys.executable, str(Path(__file__).resolve().parents[2] / "sandbox" / "agent.py")],
                        env={**os.environ, "SANDBOX_TOKEN": "tok-1", "SANDBOX_HOME": tempfile.mkdtemp(),
                             "SANDBOX_PORT": str(SANDBOX), "SANDBOX_BIND": "127.0.0.1",
@@ -996,6 +998,72 @@ r = c2.post("/api/login", json={"password": "hunter2hunter2"})
 run("login sets httponly strict cookie", r.status_code == 200 and "httponly" in r.headers["set-cookie"].lower()
     and "samesite=strict" in r.headers["set-cookie"].lower())
 run("session works", c2.get("/api/settings").status_code == 200)
+
+# Notion
+NOTION_TOOLS = ["notion_search", "notion_read", "notion_query", "notion_create_page", "notion_update_page"]
+DB_ID, PG_ID = "11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"
+SEEN = mock_notion.SEEN
+
+
+def names():
+    return {t.name for t in c.portal.call(_tools.available)}
+
+
+def fails(fn, args):
+    try:
+        c.portal.call(fn, args)
+    except _tools.ToolError as e:
+        return str(e)
+    return ""
+
+
+run("notion off until a token is set", not (set(NOTION_TOOLS) & names()) and c.get("/api/settings").json()["notion"]["key_hint"] is None)
+r = c.put("/api/keys/notion", json={"key": "ntn-bad-token-0000"})
+run("notion token saved, hint only", r.json()["notion"]["key_hint"] == "0000" and "ntn-bad" not in r.text)
+run("bad notion token reported", c.post("/api/keys/notion/test").status_code == 400)
+c.put("/api/keys/notion", json={"key": "ntn-good-token"})
+run("good notion token tests ok", "Oscar HQ" in c.post("/api/keys/notion/test").json()["detail"])
+run("notion token is encrypted on disk", "ntn-good-token" not in (Path(DATA) / "settings.json").read_text())
+run("notion tools offered once a token exists", set(NOTION_TOOLS) <= names())
+run("notion id from url", notion.parse_id("https://www.notion.so/ws/Tasks-" + DB_ID.replace("-", "") + "?v=" + PG_ID.replace("-", "")) == DB_ID)
+
+r = c.portal.call(_tools.notion_search, {"query": "milk", "kind": "page"})
+run("notion search lists id and title", f'page "Buy milk" id={PG_ID}' in r and SEEN[-1][2]["filter"] == {"property": "object", "value": "page"})
+r = c.portal.call(_tools.notion_read, {"id": PG_ID.replace("-", "")})
+run("notion read page: properties and nested blocks", "Status: Todo" in r and "# Shopping" in r and "- [ ] Milk" in r
+    and "  - oat" in r and "[see site](https://example.com)" in r)
+r = c.portal.call(_tools.notion_read, {"id": DB_ID})
+run("notion read database falls back to schema", "Tasks" in r and "Status (status): Todo, Done" in r)
+run("notion unshared page explains how to share", "Connections" in fails(_tools.notion_read, {"id": "99999999-9999-9999-9999-999999999999"}))
+r = c.portal.call(_tools.notion_query, {"database_id": DB_ID, "filter": '{"property": "Status", "status": {"equals": "Todo"}}', "limit": 5})
+run("notion query: filter (even as a string), rows and cursor",
+    SEEN[-1][2] == {"page_size": 5, "filter": {"property": "Status", "status": {"equals": "Todo"}}}
+    and "Buy milk" in r and "Points: 3" in r and "cursor=cur-2" in r)
+
+r = c.portal.call(_tools.notion_create_page, {
+    "parent_id": DB_ID, "title": "Call Sam", "properties": {"status": "Todo", "Due": "2026-10-12", "Tags": "a, b", "Points": "5"},
+    "content": "# Plan\n- [ ] ring\n**bold** and [link](https://e.com)"})
+body = [x for x in SEEN if x[0] == "POST"][-1][2]
+run("notion create page in a database maps properties by schema",
+    body["parent"] == {"database_id": DB_ID} and body["properties"]["Name"]["title"][0]["text"]["content"] == "Call Sam"
+    and body["properties"]["Status"] == {"status": {"name": "Todo"}} and body["properties"]["Due"] == {"date": {"start": "2026-10-12"}}
+    and [t["name"] for t in body["properties"]["Tags"]["multi_select"]] == ["a", "b"] and body["properties"]["Points"] == {"number": 5}
+    and [b["type"] for b in body["children"]] == ["heading_1", "to_do", "paragraph"]
+    and body["children"][2]["paragraph"]["rich_text"][0]["annotations"] == {"bold": True} and "Created" in r)
+bad = fails(_tools.notion_create_page, {"parent_id": DB_ID, "title": "x", "properties": {"Nope": "1"}})
+run("notion unknown property lists the real ones", "Nope" in bad and "Status" in bad)
+run("notion read-only property refused", "can't be set" in fails(_tools.notion_create_page, {"parent_id": DB_ID, "title": "x", "properties": {"Made": "2026-01-01"}}))
+c.portal.call(_tools.notion_create_page, {"parent_id": PG_ID, "title": "Sub page", "content": "hello"})
+body = [x for x in SEEN if x[0] == "POST"][-1][2]
+run("notion create page under a page (not a database)", body["parent"] == {"page_id": PG_ID} and "properties" in body)
+r = c.portal.call(_tools.notion_update_page, {"page_id": PG_ID, "properties": {"Status": "Done"}, "archived": False, "append": "- done"})
+seen = [x for x in SEEN if x[0] in ("PATCH", "APPEND")][-2:]
+run("notion update page patches properties and appends blocks",
+    seen[0][2] == {"properties": {"Status": {"status": {"name": "Done"}}}, "archived": False}
+    and seen[1][0] == "APPEND" and seen[1][2]["children"][0]["type"] == "bulleted_list_item" and "Updated" in r)
+run("notion update with nothing to change is an error", "Nothing to change" in fails(_tools.notion_update_page, {"page_id": PG_ID}))
+c.delete("/api/keys/notion")
+run("notion off again once the token is removed", not (set(NOTION_TOOLS) & names()))
 
 # key survives a server restart (master key persisted)
 run("key still decrypts", vault.get_key("openrouter") == "sk-good-key-1234")

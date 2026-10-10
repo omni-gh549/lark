@@ -405,6 +405,22 @@
 
     {/if}
 
+    {#if s.notion}
+    <div class="group">
+      <h2>Notion</h2>
+      <div class="rows">
+        {@render keyRow("notion", s.notion)}
+        <div class="row">
+          <p class="meta" style="margin:0">
+            {s.notion.key_hint
+              ? "Lark can search, read, create and update your Notion pages and databases."
+              : "Create an internal integration, paste its token here, then share pages with it in Notion (••• menu, Connections). Lark only sees what you share."}
+          </p>
+        </div>
+      </div>
+    </div>
+    {/if}
+
     {#if s.telegram}
     <div class="group">
       <h2>Telegram</h2>

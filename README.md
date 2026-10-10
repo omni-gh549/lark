@@ -51,6 +51,8 @@ Lark can use tools. Each one switches on when its backend is set up, so a fresh 
 
 **Web search.** Open Settings, choose Brave Search or Tavily, and paste a key. Lark then searches when it needs to, and the chat shows each search as it happens.
 
+**Notion.** Create an internal integration at notion.so/profile/integrations, copy its token, and paste it under Notion in Settings (it is stored encrypted, like the other keys). Then, in Notion, share the pages or databases you want Lark to use with that integration (••• menu, Connections). Lark gets `notion_search`, `notion_read`, `notion_query`, `notion_create_page` and `notion_update_page`: it can find and read pages, list and filter database rows, create pages and rows, change properties, append content and move pages to the trash. It cannot edit or delete existing text. Remove the token to switch it off.
+
 **Sandbox.** A private Linux machine Lark can run commands in, with files that persist between chats. It is a Docker container with its own network, no access to the host, memory/CPU/process limits, and dropped capabilities. Set it up on a Linux server with Docker (as root):
 
 ```
