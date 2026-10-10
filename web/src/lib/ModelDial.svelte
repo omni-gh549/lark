@@ -85,6 +85,7 @@
         onpointercancel={() => (drag = null)}
       >
         <span class="groove"></span>
+        <span class="fill" class:easing={drag === null} style="width:{at * 100}%"></span>
         {#each NAMES as n, i}<span class="stop" class:passed={i / 2 <= at} style="left:{i * 50}%"></span>{/each}
         <span class="thumb" class:none={index < 0 && drag === null} style="left:{at * 100}%"></span>
       </div>
@@ -104,22 +105,24 @@
   .open .dial-btn svg { transform: rotate(180deg); }
   .dial-pop {
     position: absolute; bottom: calc(100% + 14px); right: -8px; width: 244px; padding: 16px 20px 18px;
-    border-radius: 20px; border: 1px solid var(--line); background: var(--bg);
+    border-radius: 22px; border: 1px solid var(--line); background: var(--card); text-align: center;
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
     opacity: 0; transform: translateY(6px) scale(0.97); transform-origin: bottom right; pointer-events: none;
     transition: opacity .18s ease, transform .22s cubic-bezier(.2, .9, .3, 1);
   }
   .open .dial-pop { opacity: 1; transform: none; pointer-events: auto; }
-  .dial-title { font-size: 16px; font-weight: 500; }
-  .dial-model { margin-top: 2px; font: 12px/1.4 var(--mono); color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dial-title { font-size: 17px; font-weight: 600; }
+  .dial-model { margin-top: 2px; text-align: center; font: 12px/1.4 var(--mono); color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .track { position: relative; height: 28px; margin: 16px 8px 0; cursor: pointer; touch-action: none; outline: 0; user-select: none; }
   .track:focus-visible { outline: 2px solid var(--ink); outline-offset: 6px; border-radius: 14px; }
-  .groove { position: absolute; left: 0; right: 0; top: 13px; height: 2px; border-radius: 2px; background: var(--line); }
-  .stop { position: absolute; top: 11px; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: var(--ink-soft); opacity: 0.45; transition: opacity .2s; }
-  .stop.passed { opacity: 0.9; }
+  .groove { position: absolute; left: 0; right: 0; top: 11px; height: 6px; border-radius: 3px; background: var(--line); }
+  .fill { position: absolute; left: 0; top: 11px; height: 6px; border-radius: 3px; background: var(--accent); }
+  .stop { position: absolute; top: 12.5px; width: 3px; height: 3px; margin-left: -1.5px; border-radius: 50%; background: var(--ink-soft); opacity: 0.6; }
+  .stop.passed { background: var(--on-accent); opacity: 0.7; }
+  .fill.easing { transition: width .25s cubic-bezier(.3, .8, .3, 1); }
   .thumb {
     position: absolute; top: 2px; width: 24px; height: 24px; margin-left: -12px; border-radius: 50%;
-    background: var(--accent); box-shadow: 0 1px 6px rgba(0, 0, 0, 0.25);
+    background: #fff; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 0, 0, 0.06);
     transition: left .25s cubic-bezier(.3, .8, .3, 1), opacity .2s, transform .15s;
   }
   .dragging .thumb { transition: none; transform: scale(1.08); }
