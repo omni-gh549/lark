@@ -62,20 +62,20 @@
 {/if}
 
 <style>
-  .dial { position: relative; display: flex; justify-content: flex-end; margin: 0 4px 8px; }
+  .dial { position: relative; display: flex; align-self: center; flex: none; }
   .dial-btn {
     display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px 5px 9px; border-radius: 999px;
-    border: 1px solid var(--line); background: var(--glass); backdrop-filter: blur(20px);
+    border: 0; background: none;
     color: var(--ink-soft); font-size: 12.5px; transition: color .2s, background .2s, transform .2s;
   }
-  .dial-btn:hover, .open .dial-btn { color: var(--ink); background: var(--glass-strong); }
+  .dial-btn:hover, .open .dial-btn { color: var(--ink); background: var(--glass); }
   .dial-btn:active { transform: scale(0.96); }
   .dial-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
   .bar { opacity: 0.35; transition: opacity .3s, transform .3s; transform-origin: center bottom; }
   .bar.on { opacity: 1; }
   .open .bar.on { transform: scaleY(1.12); }
   .dial-pop {
-    position: absolute; right: 0; bottom: calc(100% + 8px); width: 210px; padding: 14px 20px 10px;
+    position: absolute; bottom: calc(100% + 18px); right: -48px; width: 210px; padding: 14px 20px 10px;
     border-radius: 18px; border: 1px solid var(--line); background: var(--glass-strong); backdrop-filter: blur(24px);
     opacity: 0; transform: translateY(8px) scale(0.94); transform-origin: bottom right; pointer-events: none;
     transition: opacity .22s ease, transform .3s cubic-bezier(.2, .9, .3, 1.2);

@@ -249,7 +249,6 @@
         {#if note}<span class="status bad">{note}</span>{/if}
       </div>
     {/if}
-    <ModelDial />
     <form class="composer" onsubmit={(e) => { e.preventDefault(); submit(); }}
       ondragover={(e) => e.preventDefault()} ondrop={(e) => { e.preventDefault(); addFiles(e.dataTransfer.files); }}>
       <button type="button" class="attach" aria-label="Attach image" onclick={() => picker.click()}>
@@ -266,6 +265,7 @@
         placeholder="Message Lark"
         aria-label="Message Lark"
       ></textarea>
+      <ModelDial />
       {#if chat.busy && !text.trim() && !attachments.length}
         <button type="button" class="send" aria-label="Stop" onclick={stop}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/></svg>
