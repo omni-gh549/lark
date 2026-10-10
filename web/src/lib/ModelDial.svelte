@@ -18,7 +18,7 @@
   const stop = $derived(chosen ?? (index < 0 ? 1 : index));
   const shown = $derived(drag === null ? stop : Math.round(drag * 2));
   const at = $derived(drag === null ? stop / 2 : drag);
-  const x = (f) => `calc(${f} * (100% - ${2 * R}px) + ${R}px)`;
+  const x = (f, off = R) => `calc(${f} * (100% - ${2 * R}px) + ${off}px)`;
 
   async function pick(i) {
     if (i === index) {
@@ -93,7 +93,7 @@
         onpointerup={up}
         onpointercancel={() => (drag = null)}
       >
-        <span class="fill" style="width:{x(at)}"></span>
+        <span class="fill" style="width:{x(at, R - 3)}"></span>
         {#each NAMES as n, i}<span class="stop" class:passed={i / 2 <= at + 0.001} style="left:{x(i / 2)}"></span>{/each}
         <span class="thumb" style="left:{x(at)}"></span>
       </div>
@@ -126,7 +126,7 @@
     cursor: pointer; touch-action: none; outline: 0; user-select: none;
   }
   .track:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
-  .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 14px; background: #3b82f6; transition: width .25s cubic-bezier(.3, .8, .3, 1); }
+  .fill { position: absolute; left: 3px; top: 3px; height: 22px; border-radius: 11px 0 0 11px; background: #3b82f6; transition: width .25s cubic-bezier(.3, .8, .3, 1); }
   .stop { position: absolute; top: 12.5px; width: 3px; height: 3px; margin-left: -1.5px; border-radius: 50%; background: var(--ink-soft); opacity: 0.55; }
   .stop.passed { background: #fff; opacity: 0.6; }
   .thumb {
