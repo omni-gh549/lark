@@ -69,6 +69,12 @@
       if (menuOpen && !e.target.closest?.(".side-foot")) menuOpen = false;
     };
     const onkey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        if (matchMedia("(max-width: 760px)").matches) drawer = !drawer;
+        else wide = !wide;
+        return;
+      }
       if (e.key !== "Escape") return;
       if (menuOpen) menuOpen = false;
       else if (searching) endSearch();
@@ -129,7 +135,7 @@
   <!-- expanded panel (also the phone drawer) -->
   <div class="side-panel">
     <div class="side-head">
-      <button class="side-name" onclick={() => section("chat")}><span class="logo-sm">L</span>Lark</button>
+      <button class="side-name" onclick={() => section("chat")}>Lark</button>
       <span class="grow"></span>
       <button class="side-btn" aria-label="Search chats" title="Search chats" aria-pressed={searching} onclick={() => (searching ? endSearch() : find())}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>

@@ -149,18 +149,21 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .rail-icons {
   width: var(--rail-w); flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px;
   padding: calc(10px + var(--sat)) 0 calc(10px + var(--sab));
-  background: var(--glass); backdrop-filter: blur(24px); border-right: 1px solid var(--line);
+  position: relative; background: var(--bg);
 }
+/* closed: the main page sits over the rail, with rounded corners and a soft shadow on the rail's edge */
+.side:not(.wide) .rail-icons { box-shadow: inset -9px 0 12px -9px rgba(0, 0, 0, 0.16); }
+.side:not(.wide) .rail-icons::before, .side:not(.wide) .rail-icons::after {
+  content: ""; position: absolute; left: 100%; width: 18px; height: 18px; pointer-events: none;
+}
+.side:not(.wide) .rail-icons::before { top: 0; background: radial-gradient(circle at 100% 100%, transparent 17px, var(--bg) 18px); }
+.side:not(.wide) .rail-icons::after { bottom: 0; background: radial-gradient(circle at 100% 0, transparent 17px, var(--bg) 18px); }
 .rail-foot { margin-top: auto; }
 .grow { flex: 1; }
-.logo-sm {
-  display: grid; place-items: center; border-radius: 50%; border: 1.5px solid currentColor; font-weight: 500; line-height: 1; flex: none;
-  width: 26px; height: 26px; font-size: 13px;
-}
 .side-panel {
   display: none; flex: 1; min-width: 0; min-height: 0; flex-direction: column;
   padding: calc(10px + var(--sat)) 10px calc(10px + var(--sab)) 12px;
-  background: var(--glass); backdrop-filter: blur(24px); border-right: 1px solid var(--line);
+  background: var(--bg); border-right: 1px solid var(--line);
 }
 .side.wide .side-panel { display: flex; }
 .side-head { display: flex; align-items: center; gap: 2px; margin: 0 0 6px; }
@@ -203,7 +206,7 @@ main { padding-left: var(--side-w); transition: padding-left 0.18s ease-out; }
 
 /* panels */
 .panels {
-  position: fixed; z-index: 2; left: calc(var(--side-w) + 16px); top: var(--top); bottom: 16px;
+  position: fixed; z-index: 2; left: calc(var(--side-w) + 16px); top: var(--top); bottom: 16px; padding-top: 40px;
   width: 340px; overflow-y: auto;
   display: flex; flex-direction: column; gap: 10px;
   animation: slide 0.18s ease-out;
@@ -434,7 +437,7 @@ main { min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); grid-te
   .side {
     width: min(88vw, 340px); padding: 0; flex-direction: column; transform: translateX(-102%); visibility: hidden;
     transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s 0.22s;
-    z-index: 6; box-shadow: 0 0 40px rgba(0, 0, 0, 0.14);
+    z-index: 6; box-shadow: 0 0 40px rgba(0, 0, 0, 0.14); background: var(--bg);
   }
   .side.drawer { transform: none; visibility: visible; transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1); }
   .side-scrim { display: block; z-index: 5; }
@@ -448,7 +451,7 @@ main { min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); grid-te
   .side-new, .side-nav button, .side-pick { min-height: 46px; }
   .side-del { min-width: 44px; min-height: 44px; }
   .side-search { font-size: 16px; min-height: 44px; }
-  .side .side-foot { padding-top: 6px; }
+  .side .side-foot { padding: 6px 10px calc(8px + var(--sab)); }
   .side .side-menu { left: 0; }
 
   /* panels slide in as a drawer with a scrim behind it */
@@ -456,7 +459,7 @@ main { min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); grid-te
   @keyframes fade { from { opacity: 0; } }
   .panels {
     left: 0; top: 0; bottom: 0; right: auto; width: min(88vw, 360px);
-    padding: calc(var(--top) + 4px) 14px calc(16px + var(--sab)) max(14px, var(--sal));
+    padding: calc(var(--top) + 36px) 14px calc(16px + var(--sab)) max(14px, var(--sal));
     background: var(--veil); backdrop-filter: blur(30px); overscroll-behavior: contain;
     animation: drawer 0.22s cubic-bezier(0.22, 1, 0.36, 1);
   }
