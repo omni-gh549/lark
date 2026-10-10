@@ -66,6 +66,8 @@ body { overscroll-behavior: none; }
 html, body, #app { height: var(--app-h, 100%); }
 html { background-color: var(--bg); }
 :root[data-backdrop="mesh"] { background-color: var(--edge, var(--bg)); }
+/* the root has its own colour now, so body's colour would sit on top of the backdrop instead of under it */
+:root[data-backdrop="mesh"] body { background-color: transparent; }
 body {
   font: 15px/1.45 var(--font);
   color: var(--ink);
