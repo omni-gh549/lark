@@ -165,6 +165,12 @@ def blocks_from_markdown(text: str) -> list:
             block("bulleted_list_item", m.group(1))
         elif (m := re.match(r"\d+[.)]\s+(.*)", s)):
             block("numbered_list_item", m.group(1))
+        elif (m := re.fullmatch(r"!\[([^\]]*)\]\((https?://[^)\s]+)\)", s)):
+            kind = "pdf" if m.group(2).lower().split("?")[0].endswith(".pdf") else \
+                "video" if re.search(r"\.(mp4|webm|mov)$", m.group(2).lower().split("?")[0]) else \
+                "image" if re.search(r"\.(png|jpe?g|gif|webp|svg|avif)$", m.group(2).lower().split("?")[0]) else "file"
+            blocks.append({"object": "block", "type": kind, kind: {
+                "type": "external", "external": {"url": m.group(2)}, **({"caption": _rich(m.group(1))} if m.group(1) else {})}})
         elif s.startswith(">"):
             block("quote", s.lstrip("> "))
         else:
@@ -265,7 +271,7 @@ def _block_text(b: dict) -> str:
     return f"[{t}]"
 
 
-async def _blocks(key: str, block_id: str, depth: int, budget: list) -> list[str]:
+async def _blocks(key: str, block_id: str, depth: int, budget: list, ids: bool = False) -> list[str]:
     out, cursor = [], None
     while budget[0] > 0:
         budget[0] -= 1
@@ -274,9 +280,9 @@ async def _blocks(key: str, block_id: str, depth: int, budget: list) -> list[str
             text = _block_text(b)
             if text or b.get("has_children"):
                 if text:
-                    out.append("  " * depth + text)
+                    out.append("  " * depth + (f"[{b['id']}] " if ids else "") + text)
                 if b.get("has_children") and b.get("type") not in ("child_page", "child_database") and depth < MAX_DEPTH:
-                    out += await _blocks(key, b["id"], depth + (0 if b.get("type") in ("column_list", "column", "table") else 1), budget)
+                    out += await _blocks(key, b["id"], depth + (0 if b.get("type") in ("column_list", "column", "table") else 1), budget, ids)
         if not r.get("has_more"):
             break
         cursor = r.get("next_cursor")
@@ -481,3 +487,94 @@ def json_arg(value, what: str):
         except ValueError:
             raise NotionError(f"'{what}' must be a JSON object.")
     return value
+
+
+# ---- block-level editing ----
+
+TEXT_BLOCKS = ("paragraph", "heading_1", "heading_2", "heading_3", "bulleted_list_item", "numbered_list_item",
+               "to_do", "toggle", "quote", "callout", "code")
+
+
+async def blocks(key: str, ident: str) -> str:
+    """A page's (or block's) content with every block's id, so single blocks can be edited, moved or deleted."""
+    nid = parse_id(ident)
+    lines = await _blocks(key, nid, 0, [MAX_BLOCK_CALLS], ids=True)
+    return "\n".join(lines) if lines else "(no blocks)"
+
+
+async def edit_block(key: str, block_id: str, text: str | None, checked: bool | None, language: str | None) -> str:
+    bid = parse_id(block_id)
+    b = await call(key, "GET", f"/blocks/{bid}")
+    t = b.get("type")
+    if t not in TEXT_BLOCKS:
+        raise NotionError(f"A {t} block has no text to edit. Delete it and insert a new block instead.")
+    body: dict = {}
+    if text is not None:
+        body["rich_text"] = _chunks(text) if t == "code" else _rich(text)
+    if checked is not None:
+        if t != "to_do":
+            raise NotionError("Only to-do blocks can be checked.")
+        body["checked"] = bool(checked)
+    if language and t == "code":
+        body["language"] = language.lower()
+    if not body:
+        raise NotionError("Nothing to change: give text, checked or language.")
+    done = await call(key, "PATCH", f"/blocks/{bid}", {t: body})
+    return f"Updated {t} block id={done.get('id', bid)}: {_block_text(done)[:200]}"
+
+
+async def _siblings(key: str, parent_id: str) -> list[dict]:
+    out, cursor = [], None
+    for _ in range(10):
+        r = await call(key, "GET", f"/blocks/{parent_id}/children", params={"page_size": 100, **({"start_cursor": cursor} if cursor else {})})
+        out += r.get("results", [])
+        if not r.get("has_more"):
+            break
+        cursor = r.get("next_cursor")
+    return out
+
+
+async def delete_blocks(key: str, ids: list | None, first: str | None, last: str | None) -> str:
+    """Delete (move to the trash) listed blocks, or every block from `first` to `last` inclusive among the same siblings."""
+    targets: list[str] = []
+    if first or last:
+        a, z = parse_id(first or last), parse_id(last or first)
+        parent = (await call(key, "GET", f"/blocks/{a}")).get("parent") or {}
+        pid = parent.get(parent.get("type", ""))
+        if not pid:
+            raise NotionError("Can't find that block's parent.")
+        sib = [x["id"] for x in await _siblings(key, pid)]
+        if a not in sib or z not in sib:
+            raise NotionError("Both blocks must be on the same level of the same page. List them with notion_blocks.")
+        i, j = sib.index(a), sib.index(z)
+        if i > j:
+            i, j = j, i
+        targets = sib[i:j + 1]
+    else:
+        targets = [parse_id(x) for x in (ids or [])]
+    if not targets:
+        raise NotionError("Give block_ids, or first_id and last_id for a range.")
+    if len(targets) > 50:
+        raise NotionError(f"That is {len(targets)} blocks; delete at most 50 at a time.")
+    for t in targets:
+        await call(key, "DELETE", f"/blocks/{t}")
+    return f"Deleted {len(targets)} block(s) (moved to Notion's trash; they can be restored there)."
+
+
+async def insert_blocks(key: str, parent: str, content: str, after: str | None) -> str:
+    """Add markdown content under a page or block: at the end, or right after block `after`."""
+    pid = parse_id(parent)
+    new = blocks_from_markdown(content or "")
+    if not new:
+        raise NotionError("Nothing to insert: give content.")
+    anchor = parse_id(after) if after else None
+    made = 0
+    for i in range(0, len(new), 100):
+        batch = new[i:i + 100]
+        body: dict = {"children": batch, **({"after": anchor} if anchor else {})}
+        r = await call(key, "PATCH", f"/blocks/{pid}/children", body)
+        made += len(batch)
+        res = r.get("results") or []
+        if anchor and len(res) >= len(batch):
+            anchor = res[len(batch) - 1]["id"]  # the next batch goes after this one
+    return f"Inserted {made} block(s) " + ("after the given block." if after else "at the end.")

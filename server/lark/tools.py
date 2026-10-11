@@ -428,6 +428,31 @@ async def notion_update_page(args: dict):
                          _json_obj(args, "properties", dict), archived if isinstance(archived, bool) else None, _opt_str(args, "append"))
 
 
+def _id_list(args: dict, key: str) -> list | None:
+    v = args.get(key)
+    if isinstance(v, str):
+        v = [x for x in re.split(r"[,\s]+", v) if x]
+    return v if isinstance(v, list) and v else None
+
+
+async def notion_blocks(args: dict):
+    return await _notion(notion.blocks, _str(args, "id"))
+
+
+async def notion_edit_block(args: dict):
+    checked, lang = args.get("checked"), args.get("language")
+    return await _notion(notion.edit_block, _str(args, "block_id"), args["text"] if isinstance(args.get("text"), str) else None,
+                         checked if isinstance(checked, bool) else None, lang if isinstance(lang, str) else None)
+
+
+async def notion_delete_blocks(args: dict):
+    return await _notion(notion.delete_blocks, _id_list(args, "block_ids"), _opt_str(args, "first_id"), _opt_str(args, "last_id"))
+
+
+async def notion_insert_blocks(args: dict):
+    return await _notion(notion.insert_blocks, _str(args, "parent_id"), _str(args, "content"), _opt_str(args, "after"))
+
+
 NOTION_TOOLS = [
     Tool("notion_search", "Notion search",
          "Search the owner's Notion workspace by title. Returns pages and databases with their ids and links. "
@@ -459,6 +484,27 @@ NOTION_TOOLS = [
          _obj({"page_id": {"type": "string"}, "title": {"type": "string"}, "properties": {"type": "object"},
                "archived": {"type": "boolean"}, "append": {"type": "string"}}, ["page_id"]),
          notion_update_page, lambda a: str(a.get("title") or a.get("page_id", ""))[:100]),
+    Tool("notion_blocks", "Notion blocks",
+         "List the content of a Notion page (or a block's children) with the id of every block, nested blocks indented. "
+         "Use it before editing, deleting or inserting inside a page, to get the block ids.",
+         _obj({"id": {"type": "string"}}, ["id"]), notion_blocks, lambda a: str(a.get("id", ""))[:100]),
+    Tool("notion_edit_block", "Notion edit block",
+         "Change the text of one existing block (paragraph, heading, list item, to-do, toggle, quote, callout, code) by its id from notion_blocks. "
+         "text replaces the block's whole text and may use **bold**, `code` and [links](url); checked ticks or unticks a to-do. "
+         "Do this yourself when the owner asks to fix or reword something on a page.",
+         _obj({"block_id": {"type": "string"}, "text": {"type": "string"}, "checked": {"type": "boolean"}, "language": {"type": "string"}}, ["block_id"]),
+         notion_edit_block, lambda a: str(a.get("text", ""))[:100] or str(a.get("block_id", ""))[:40]),
+    Tool("notion_delete_blocks", "Notion delete blocks",
+         "Delete blocks from a page: block_ids (a list), or first_id and last_id to delete that block, the last one and everything between "
+         "(same level of the same page). Blocks go to Notion's trash. Do this yourself when the owner asks to remove something from a page; "
+         "don't ask them to do it by hand.",
+         _obj({"block_ids": {"type": "array", "items": {"type": "string"}}, "first_id": {"type": "string"}, "last_id": {"type": "string"}}, []),
+         notion_delete_blocks, lambda a: (f"{len(a['block_ids'])} blocks" if isinstance(a.get("block_ids"), list) else "range")),
+    Tool("notion_insert_blocks", "Notion insert blocks",
+         "Add content (markdown: #, -, [ ], 1., >, ```, **bold**, links, and ![caption](https://image-url) for an image, PDF or file by URL) "
+         "inside a page or block: at the end, or right after the block whose id you give as after.",
+         _obj({"parent_id": {"type": "string"}, "content": {"type": "string"}, "after": {"type": "string"}}, ["parent_id", "content"]),
+         notion_insert_blocks, lambda a: str(a.get("content", ""))[:100]),
 ]
 
 

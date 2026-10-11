@@ -7,6 +7,8 @@ SEEN: list = []  # (kind, id, json body) of every call that sends something, for
 
 DB = "11111111-1111-1111-1111-111111111111"
 PG = "22222222-2222-2222-2222-222222222222"
+B1, B2, B3, B4 = ("a1" * 4 + "-0000-0000-0000-" + "0" * 12, "a2" * 4 + "-0000-0000-0000-" + "0" * 12,
+                  "a3" * 4 + "-0000-0000-0000-" + "0" * 12, "a4" * 4 + "-0000-0000-0000-" + "0" * 12)
 
 
 def rt(s):
@@ -92,11 +94,11 @@ async def children(bid: str, request: Request):
         return bad
     if bid == PG:
         return {"results": [
-            {"id": "b1", "type": "heading_1", "has_children": False, "heading_1": {"rich_text": rt("Shopping")}},
-            {"id": "b2", "type": "to_do", "has_children": True, "to_do": {"rich_text": rt("Milk"), "checked": False}},
-            {"id": "b3", "type": "paragraph", "has_children": False, "paragraph": {"rich_text": [
+            {"id": B1, "type": "heading_1", "has_children": False, "heading_1": {"rich_text": rt("Shopping")}},
+            {"id": B2, "type": "to_do", "has_children": True, "to_do": {"rich_text": rt("Milk"), "checked": False}},
+            {"id": B3, "type": "paragraph", "has_children": False, "paragraph": {"rich_text": [
                 {"type": "text", "plain_text": "see site", "annotations": {}, "href": "https://example.com"}]}}], "has_more": False}
-    return {"results": [{"id": "b4", "type": "bulleted_list_item", "has_children": False,
+    return {"results": [{"id": B4, "type": "bulleted_list_item", "has_children": False,
                          "bulleted_list_item": {"rich_text": rt("oat")}}], "has_more": False}
 
 
@@ -104,5 +106,38 @@ async def children(bid: str, request: Request):
 async def append(bid: str, request: Request):
     if (bad := _bad(request)):
         return bad
-    SEEN.append(("APPEND", bid, await request.json()))
-    return {"results": []}
+    body = await request.json()
+    SEEN.append(("APPEND", bid, body))
+    return {"results": [{"id": f"{i:08d}-0000-0000-0000-000000000000"} for i in range(1, len(body["children"]) + 1)]}
+
+
+BLOCKS = {
+    B1: {"id": B1, "type": "heading_1", "has_children": False, "parent": {"type": "page_id", "page_id": PG}, "heading_1": {"rich_text": rt("Shopping")}},
+    B2: {"id": B2, "type": "to_do", "has_children": True, "parent": {"type": "page_id", "page_id": PG}, "to_do": {"rich_text": rt("Milk"), "checked": False}},
+    B3: {"id": B3, "type": "paragraph", "has_children": False, "parent": {"type": "page_id", "page_id": PG}, "paragraph": {"rich_text": rt("see site")}},
+    "dddddddd-0000-0000-0000-000000000000": {"id": "dddddddd-0000-0000-0000-000000000000", "type": "child_page", "has_children": False,
+                                              "parent": {"type": "page_id", "page_id": PG}, "child_page": {"title": "x"}},
+}
+
+
+@router.get("/blocks/{bid}")
+async def get_block(bid: str, request: Request):
+    return _bad(request) or (BLOCKS.get(bid) or _missing())
+
+
+@router.patch("/blocks/{bid}")
+async def patch_block(bid: str, request: Request):
+    if (bad := _bad(request)):
+        return bad
+    body = await request.json()
+    SEEN.append(("BLOCK", bid, body))
+    b = BLOCKS.get(bid)
+    return {**b, b["type"]: {**b[b["type"]], **body[b["type"]]}} if b else _missing()
+
+
+@router.delete("/blocks/{bid}")
+async def delete_block(bid: str, request: Request):
+    if (bad := _bad(request)):
+        return bad
+    SEEN.append(("DELETE", bid, None))
+    return {"object": "block", "id": bid, "archived": True}

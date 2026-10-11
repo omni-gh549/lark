@@ -1062,6 +1062,25 @@ run("notion update page patches properties and appends blocks",
     seen[0][2] == {"properties": {"Status": {"status": {"name": "Done"}}}, "archived": False}
     and seen[1][0] == "APPEND" and seen[1][2]["children"][0]["type"] == "bulleted_list_item" and "Updated" in r)
 run("notion update with nothing to change is an error", "Nothing to change" in fails(_tools.notion_update_page, {"page_id": PG_ID}))
+run("notion blocks lists ids, nested indented", f"[{mock_notion.B1}] # Shopping" in c.portal.call(_tools.notion_blocks, {"id": PG_ID})
+    and f"  [{mock_notion.B4}] - oat" in c.portal.call(_tools.notion_blocks, {"id": PG_ID}))
+r = c.portal.call(_tools.notion_edit_block, {"block_id": mock_notion.B2, "text": "Oat **milk**", "checked": True})
+blk = [x for x in SEEN if x[0] == "BLOCK"][-1]
+run("notion edit block sends type-specific rich text", blk[2]["to_do"]["checked"] is True
+    and blk[2]["to_do"]["rich_text"][1]["annotations"] == {"bold": True} and "Updated to_do" in r)
+run("notion edit refuses blocks without text", "no text to edit" in fails(_tools.notion_edit_block, {"block_id": "dddddddd-0000-0000-0000-000000000000", "text": "x"}))
+r = c.portal.call(_tools.notion_delete_blocks, {"block_ids": [mock_notion.B3]})
+run("notion delete one block", SEEN[-1] == ("DELETE", mock_notion.B3, None) and "Deleted 1" in r)
+n = len(SEEN)
+r = c.portal.call(_tools.notion_delete_blocks, {"first_id": mock_notion.B1, "last_id": mock_notion.B3})
+run("notion delete a range between two blocks", [x[1] for x in SEEN[n:]] == [mock_notion.B1, mock_notion.B2, mock_notion.B3] and "Deleted 3" in r)
+run("notion delete needs targets", "Give block_ids" in fails(_tools.notion_delete_blocks, {}))
+r = c.portal.call(_tools.notion_insert_blocks, {"parent_id": PG_ID, "after": mock_notion.B1,
+                                                "content": "new line\n![chart](https://e.com/c.png)\n![doc](https://e.com/a.pdf)"})
+ap = SEEN[-1]
+run("notion insert after a block, with image and pdf blocks", ap[0] == "APPEND" and ap[2]["after"] == mock_notion.B1
+    and [b["type"] for b in ap[2]["children"]] == ["paragraph", "image", "pdf"]
+    and ap[2]["children"][1]["image"]["external"]["url"] == "https://e.com/c.png" and "after the given block" in r)
 c.delete("/api/keys/notion")
 run("notion off again once the token is removed", not (set(NOTION_TOOLS) & names()))
 

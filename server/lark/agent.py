@@ -77,7 +77,10 @@ def system_prompt(available: list[tools.Tool], sub: bool = False) -> str:
     if "notion_search" in names:
         lines.append("You can use the owner's Notion with notion_search, notion_read, notion_query, notion_create_page and notion_update_page; "
                      "never drive Notion through the browser. Search to find an id, read a database before querying it so the property names are right, "
-                     "and write to Notion only when asked. Give the owner titles and links, not raw ids.")
+                     "and write to Notion only when asked. Give the owner titles and links, not raw ids. "
+                     "To fix, reword, remove or insert something inside a page, do it yourself: notion_blocks lists the page's blocks with ids, "
+                     "then notion_edit_block, notion_delete_blocks (one, several or a range) or notion_insert_blocks (at the end or after a block). "
+                     "Never ask the owner to delete or edit a block by hand.")
     if "message_contact" in names:
         lines.append("You can message the owner's Telegram contacts with message_contact, only when asked to. It sends straight away, "
                      "so just do it when the owner asks and don't ask them to confirm.")
