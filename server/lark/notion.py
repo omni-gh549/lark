@@ -55,7 +55,8 @@ async def call(key: str, method: str, path: str, body: dict | None = None, param
     if r.status_code == 401:
         raise NotionError("Notion rejected the token. Check it in Settings.", 401)
     if r.status_code == 404:
-        raise NotionError(SHARE_HINT, 404)
+        raise NotionError(f"Notion says: {message or 'not found'} (asked for {path}). If the id is right, "
+                          "the page may not be shared with the integration (••• menu, Connections).", 404)
     if r.status_code == 403:
         raise NotionError(f"The integration isn't allowed to do that. {message}".strip(), 403)
     if r.status_code == 429:
@@ -502,8 +503,28 @@ async def blocks(key: str, ident: str) -> str:
     return "\n".join(lines) if lines else "(no blocks)"
 
 
-async def edit_block(key: str, block_id: str, text: str | None, checked: bool | None, language: str | None) -> str:
-    bid = parse_id(block_id)
+async def _resolve(key: str, ident: str, page: str | None) -> str:
+    """The block id, checked. If Notion doesn't know it and the page it is on is given, take the one block of that
+    page whose id differs from it by a mis-copied character or two (long ids are easy to mangle)."""
+    bid = parse_id(ident)
+    try:
+        await call(key, "GET", f"/blocks/{bid}")
+        return bid
+    except NotionError as e:
+        if e.status != 404 or not page:
+            raise
+        err = e
+    lines = await _blocks(key, parse_id(page), 0, [MAX_BLOCK_CALLS], ids=True)
+    known = [m.group(1) for m in (re.search(r"\[([0-9a-f-]{36})\]", x) for x in lines) if m]
+    scored = sorted((sum(a != b for a, b in zip(k, bid)), k) for k in known)
+    if scored and scored[0][0] <= 4 and (len(scored) == 1 or scored[1][0] >= scored[0][0] + 2):
+        return scored[0][1]
+    raise NotionError(f"{err} There is no block with that id on the page; list the blocks with notion_blocks and copy an id exactly.", 404)
+
+
+async def edit_block(key: str, block_id: str, text: str | None, checked: bool | None, language: str | None,
+                     page: str | None = None) -> str:
+    bid = await _resolve(key, block_id, page)
     b = await call(key, "GET", f"/blocks/{bid}")
     t = b.get("type")
     if t not in TEXT_BLOCKS:
@@ -534,11 +555,11 @@ async def _siblings(key: str, parent_id: str) -> list[dict]:
     return out
 
 
-async def delete_blocks(key: str, ids: list | None, first: str | None, last: str | None) -> str:
+async def delete_blocks(key: str, ids: list | None, first: str | None, last: str | None, page: str | None = None) -> str:
     """Delete (move to the trash) listed blocks, or every block from `first` to `last` inclusive among the same siblings."""
     targets: list[str] = []
     if first or last:
-        a, z = parse_id(first or last), parse_id(last or first)
+        a, z = await _resolve(key, first or last, page), await _resolve(key, last or first, page)
         parent = (await call(key, "GET", f"/blocks/{a}")).get("parent") or {}
         pid = parent.get(parent.get("type", ""))
         if not pid:
@@ -551,7 +572,7 @@ async def delete_blocks(key: str, ids: list | None, first: str | None, last: str
             i, j = j, i
         targets = sib[i:j + 1]
     else:
-        targets = [parse_id(x) for x in (ids or [])]
+        targets = [await _resolve(key, x, page) for x in (ids or [])]
     if not targets:
         raise NotionError("Give block_ids, or first_id and last_id for a range.")
     if len(targets) > 50:
@@ -567,7 +588,7 @@ async def insert_blocks(key: str, parent: str, content: str, after: str | None) 
     new = blocks_from_markdown(content or "")
     if not new:
         raise NotionError("Nothing to insert: give content.")
-    anchor = parse_id(after) if after else None
+    anchor = await _resolve(key, after, pid) if after else None
     made = 0
     for i in range(0, len(new), 100):
         batch = new[i:i + 100]

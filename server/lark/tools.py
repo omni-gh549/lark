@@ -442,11 +442,12 @@ async def notion_blocks(args: dict):
 async def notion_edit_block(args: dict):
     checked, lang = args.get("checked"), args.get("language")
     return await _notion(notion.edit_block, _str(args, "block_id"), args["text"] if isinstance(args.get("text"), str) else None,
-                         checked if isinstance(checked, bool) else None, lang if isinstance(lang, str) else None)
+                         checked if isinstance(checked, bool) else None, lang if isinstance(lang, str) else None, _opt_str(args, "page_id"))
 
 
 async def notion_delete_blocks(args: dict):
-    return await _notion(notion.delete_blocks, _id_list(args, "block_ids"), _opt_str(args, "first_id"), _opt_str(args, "last_id"))
+    return await _notion(notion.delete_blocks, _id_list(args, "block_ids"), _opt_str(args, "first_id"), _opt_str(args, "last_id"),
+                         _opt_str(args, "page_id"))
 
 
 async def notion_insert_blocks(args: dict):
@@ -486,19 +487,22 @@ NOTION_TOOLS = [
          notion_update_page, lambda a: str(a.get("title") or a.get("page_id", ""))[:100]),
     Tool("notion_blocks", "Notion blocks",
          "List the content of a Notion page (or a block's children) with the id of every block, nested blocks indented. "
-         "Use it before editing, deleting or inserting inside a page, to get the block ids.",
+         "Use it before editing, deleting or inserting inside a page, to get the block ids. Copy ids exactly, character for character; "
+         "also pass the page_id to the edit and delete tools.",
          _obj({"id": {"type": "string"}}, ["id"]), notion_blocks, lambda a: str(a.get("id", ""))[:100]),
     Tool("notion_edit_block", "Notion edit block",
          "Change the text of one existing block (paragraph, heading, list item, to-do, toggle, quote, callout, code) by its id from notion_blocks. "
          "text replaces the block's whole text and may use **bold**, `code` and [links](url); checked ticks or unticks a to-do. "
          "Do this yourself when the owner asks to fix or reword something on a page.",
-         _obj({"block_id": {"type": "string"}, "text": {"type": "string"}, "checked": {"type": "boolean"}, "language": {"type": "string"}}, ["block_id"]),
+         _obj({"block_id": {"type": "string"}, "text": {"type": "string"}, "checked": {"type": "boolean"}, "language": {"type": "string"},
+               "page_id": {"type": "string", "description": "the page the block is on; lets a slightly mis-copied block id still be found"}}, ["block_id"]),
          notion_edit_block, lambda a: str(a.get("text", ""))[:100] or str(a.get("block_id", ""))[:40]),
     Tool("notion_delete_blocks", "Notion delete blocks",
          "Delete blocks from a page: block_ids (a list), or first_id and last_id to delete that block, the last one and everything between "
          "(same level of the same page). Blocks go to Notion's trash. Do this yourself when the owner asks to remove something from a page; "
          "don't ask them to do it by hand.",
-         _obj({"block_ids": {"type": "array", "items": {"type": "string"}}, "first_id": {"type": "string"}, "last_id": {"type": "string"}}, []),
+         _obj({"block_ids": {"type": "array", "items": {"type": "string"}}, "first_id": {"type": "string"}, "last_id": {"type": "string"},
+               "page_id": {"type": "string", "description": "the page the blocks are on"}}, []),
          notion_delete_blocks, lambda a: (f"{len(a['block_ids'])} blocks" if isinstance(a.get("block_ids"), list) else "range")),
     Tool("notion_insert_blocks", "Notion insert blocks",
          "Add content (markdown: #, -, [ ], 1., >, ```, **bold**, links, and ![caption](https://image-url) for an image, PDF or file by URL) "

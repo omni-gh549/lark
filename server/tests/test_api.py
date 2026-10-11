@@ -1081,6 +1081,11 @@ ap = SEEN[-1]
 run("notion insert after a block, with image and pdf blocks", ap[0] == "APPEND" and ap[2]["after"] == mock_notion.B1
     and [b["type"] for b in ap[2]["children"]] == ["paragraph", "image", "pdf"]
     and ap[2]["children"][1]["image"]["external"]["url"] == "https://e.com/c.png" and "after the given block" in r)
+mangled = mock_notion.B3[:-1] + "1"  # one mis-copied character
+r = c.portal.call(_tools.notion_edit_block, {"block_id": mangled, "text": "x", "page_id": PG_ID})
+run("notion edit finds a slightly mis-copied block id via its page", [x for x in SEEN if x[0] == "BLOCK"][-1][1] == mock_notion.B3)
+e = fails(_tools.notion_edit_block, {"block_id": mangled, "text": "x"})
+run("notion 404 carries Notion's own message and the id", "Notion says:" in e and "not found" in e and mangled in e)
 c.delete("/api/keys/notion")
 run("notion off again once the token is removed", not (set(NOTION_TOOLS) & names()))
 
