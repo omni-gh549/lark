@@ -13,8 +13,8 @@
     "vite": "^8.3.3"
   },
   "dependencies": {
-    "@openuidev/lang-core": "0.3.2",
-    "@openuidev/svelte-lang": "0.3.2",
+    "@openuidev/lang-core": "0.4.1",
+    "@openuidev/svelte-lang": "0.4.2",
     "dompurify": "^3.4.16",
     "marked": "^18.1.0",
     "zod": "^4.6.5"
