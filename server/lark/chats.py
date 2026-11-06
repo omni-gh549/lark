@@ -42,6 +42,8 @@ def save(chat_id: str, messages: list[dict], error: str | None = None) -> dict:
     doc = {"id": chat_id, "title": _title(messages), "created": created, "updated": time.time(), "messages": messages}
     if old.get("titled") and old.get("title"):
         doc["title"], doc["titled"] = old["title"], old["titled"]  # a title the model wrote stays through later saves
+    if old.get("model"):
+        doc["model"], doc["provider"] = old["model"], old.get("provider")  # the model this chat uses stays through later saves
     if error:
         doc["error"] = error
     data = json.dumps(doc)
@@ -76,6 +78,20 @@ def set_title(chat_id: str, title: str, users: int, again: bool = False) -> bool
         memory.index_chat(chat_id, doc)
     except Exception:
         pass
+    return True
+
+
+def set_model(chat_id: str, provider: str, model: str) -> bool:
+    """Pins the model a chat uses, so going back to it restores that choice."""
+    doc = load(chat_id)
+    if not doc or not model:
+        return False
+    doc["provider"], doc["model"] = provider, model[:200]
+    fd, tmp = tempfile.mkstemp(dir=_dir(), suffix=".tmp")
+    with os.fdopen(fd, "w") as f:
+        f.write(json.dumps(doc))
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, _dir() / f"{chat_id}.json")
     return True
 
 

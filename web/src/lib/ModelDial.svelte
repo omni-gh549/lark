@@ -1,6 +1,7 @@
 <script>
   import { app } from "./store.svelte.js";
   import { api } from "./api.js";
+  import { chat } from "./chat.svelte.js";
 
   const NAMES = ["cheap", "balanced", "smart"];
   const LABELS = { cheap: "Cheap", balanced: "Balanced", smart: "Smart" };
@@ -14,7 +15,8 @@
 
   const s = $derived(app.settings);
   const ready = $derived(s && NAMES.every((n) => s.tiers?.[n]));
-  const index = $derived(ready ? NAMES.findIndex((n) => s.tiers[n] === s.models[s.provider]) : -1);
+  const current = $derived((chat.id && chat.messages.length ? chat.model : null) ?? s?.models?.[s?.provider]); // this chat's own model, else the default
+  const index = $derived(ready ? NAMES.findIndex((n) => s.tiers[n] === current) : -1);
   const stop = $derived(chosen ?? (index < 0 ? 1 : index));
   const shown = $derived(drag === null ? stop : Math.round(drag * 2));
   const at = $derived(shown / 2); // the thumb sits on a stop, even mid-drag
@@ -26,8 +28,13 @@
       return;
     }
     chosen = i;
+    const model = s.tiers[NAMES[i]];
     try {
-      app.settings = await api("/api/settings", { method: "PUT", body: { models: { [s.provider]: s.tiers[NAMES[i]] } } });
+      if (chat.id && chat.messages.length) {
+        await api(`/api/chats/${chat.id}/model`, { method: "PUT", body: { model } }); // just this chat...
+        chat.model = model;
+      }
+      app.settings = await api("/api/settings", { method: "PUT", body: { models: { [s.provider]: model } } }); // ...and the default for new chats
     } catch {}
     chosen = null;
   }

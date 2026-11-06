@@ -404,13 +404,17 @@ def sse(obj: dict) -> str:
     return f"data: {json.dumps(obj)}\n\n"
 
 
-def ready():
-    """The provider settings a chat needs: (name, key, model), or an error response."""
+def ready(chat_id: str | None = None):
+    """The provider settings a chat needs: (name, key, model), or an error response.
+    A chat that has its own model (picked on the slider while it was open) keeps using it."""
     s = vault.load()
     name = s["provider"]
     label = providers.PROVIDERS[name]["label"]
     key = vault.get_key(name)
     model = s["models"].get(name, "")
+    doc = chats.load(chat_id) if chat_id and chats.valid(chat_id) else None
+    if doc and doc.get("model") and doc.get("provider") == name:
+        model = doc["model"]
     if not key:
         return err(400, f"No {label} key yet. Add one in Settings.")
     if not model:
@@ -498,7 +502,7 @@ runs.history_builder = model_history
 async def send_to_chat(chat_id: str, body: SendIn):
     if not chats.valid(chat_id):
         return err(400, "Bad chat id.")
-    conf = ready()
+    conf = ready(chat_id)
     if isinstance(conf, JSONResponse):
         return conf
     images = [n for n in body.images if files.path(n)]
@@ -518,7 +522,19 @@ async def send_to_chat(chat_id: str, body: SendIn):
         chats.save(chat_id, messages)
     except ValueError as e:
         return err(413, str(e))
+    chats.set_model(chat_id, conf[0], conf[2])  # this chat now keeps the model it was answered with
     runs.start(chat_id, *conf, model_history(messages))
+    return {"ok": True}
+
+
+class ChatModelIn(BaseModel):
+    model: str = Field(min_length=1, max_length=200)
+
+
+@app.put("/api/chats/{chat_id}/model")
+async def put_chat_model(chat_id: str, body: ChatModelIn):
+    if not chats.valid(chat_id) or not chats.set_model(chat_id, vault.load()["provider"], body.model.strip()):
+        return err(404, "No such chat.")
     return {"ok": True}
 
 

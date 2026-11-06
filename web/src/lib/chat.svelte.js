@@ -1,10 +1,10 @@
 import { api, errorMessage } from "./api.js";
-import { loadSettings } from "./store.svelte.js";
+import { app, loadSettings } from "./store.svelte.js";
 
 const LEGACY = "lark.chat"; // chats used to live in the browser
 const CURRENT = "lark.chat.id";
 
-export const chat = $state({ id: null, messages: [], busy: false, list: [], ready: false, pending: 0 });
+export const chat = $state({ id: null, messages: [], busy: false, list: [], ready: false, pending: 0, model: null }); // model: the one this chat keeps, or null to follow the default
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -170,6 +170,7 @@ export async function openChat(id, tries = 0) {
   try {
     const doc = await api(`/api/chats/${id}`);
     chat.id = doc.id;
+    chat.model = doc.provider === app.settings?.provider ? doc.model ?? null : null;
     chat.messages = upgrade(doc.messages);
     remember(doc.id);
     if (doc.running) attach(doc.id, chat.messages);
@@ -197,6 +198,7 @@ export async function deleteChat(id) {
 export function newChat() {
   detach();
   chat.id = null;
+  chat.model = null;
   chat.messages = [];
   remember(null);
 }
@@ -236,6 +238,7 @@ export async function send(text, images = []) {
     chat.messages.push({ role: "assistant", content: e.message, error: true });
     return;
   }
+  chat.model = app.settings?.models?.[app.settings.provider] || chat.model; // the server pinned this chat to it
   refreshList();
   if (!queued) await attach(id, chat.messages);
 }
