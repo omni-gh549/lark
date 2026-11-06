@@ -6,6 +6,8 @@ from collections.abc import AsyncIterator
 
 import httpx
 
+from . import stats
+
 PROVIDERS = {
     "openrouter": {
         "label": "OpenRouter",
@@ -122,6 +124,7 @@ async def _once(name: str, key: str, model: str, messages: list[dict], tools: li
     if tools:
         body["tools"] = tools
     calls: dict[int, dict] = {}
+    used = None
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
             async with client.stream(
@@ -156,6 +159,8 @@ async def _once(name: str, key: str, model: str, messages: list[dict], tools: li
                         msg = err.get("message", "") if isinstance(err, dict) else str(err)
                         yield {"error": msg or "The provider stopped mid-reply.", "transient": True}
                         return
+                    if isinstance(obj.get("usage"), dict):
+                        used = obj["usage"]  # only some providers send this on a streamed reply
                     for choice in obj.get("choices", []):
                         delta = choice.get("delta") or {}
                         if delta.get("content"):
@@ -172,6 +177,7 @@ async def _once(name: str, key: str, model: str, messages: list[dict], tools: li
     except httpx.HTTPError as e:
         yield {"error": friendly(None), "transient": True}
         return
+    stats.record(name, model, used)
     if calls:
         yield {"tool_calls": [{**c, "id": c["id"] or f"call_{i}"} for i, c in sorted(calls.items())]}
     yield {"done": True}

@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import agent, auth, chats, files, health, memory, notion, providers, runs, sandbox, search, telegram, timeline, titles, tools, vault
+from . import agent, auth, chats, files, health, memory, notion, providers, runs, stats, sandbox, search, telegram, timeline, titles, tools, vault
 
 KEY_NAMES = set(providers.PROVIDERS) | set(search.SEARCH_PROVIDERS) | {"telegram", "notion"}
 DIST = Path(os.environ.get("LARK_DIST", Path(__file__).resolve().parents[2] / "web" / "dist"))
@@ -205,6 +205,11 @@ async def usage():
         return await providers.openrouter_usage(key)
     except Exception as e:
         return err(502, str(e) if isinstance(e, RuntimeError) else "Could not reach OpenRouter.")
+
+
+@app.get("/api/stats")
+async def model_stats():
+    return stats.summary(30)
 
 
 @app.get("/api/usage/opencode")
