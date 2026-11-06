@@ -27,6 +27,13 @@
   let cmd = $state(null); // the command box, once edited
   let mnTimer;
   const say = (text, k = "") => (note = { text, kind: k });
+  const ago = (t) => {
+    const m = Math.round((Date.now() / 1000 - t) / 60);
+    if (m < 1) return "just now";
+    if (m < 60) return `${m} min ago`;
+    if (m < 60 * 24) return `${Math.round(m / 60)} h ago`;
+    return new Date(t * 1000).toLocaleDateString([], { day: "numeric", month: "short" });
+  };
   const day = (t) => new Date(t * 1000).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
 
   async function load() {
@@ -121,7 +128,7 @@
     mnTimer = setTimeout(async () => {
       if (!mnQ.trim()) return (mnHits = null);
       try {
-        mnHits = (await api(`/api/mnemos/search?q=${encodeURIComponent(mnQ)}`)).text;
+        mnHits = (await api(`/api/mnemos/search?q=${encodeURIComponent(mnQ)}`)).items;
       } catch (e) {
         say(e.message, "bad");
       }
@@ -167,7 +174,7 @@
         {#if mnemosOn}
           <label class="row-title" for="mncmd">Mnemos command</label>
           <div class="field">
-            <input id="mncmd" value={cmd ?? m?.mnemos_command ?? ""} placeholder="mnemos (or the full path, e.g. /opt/mnemos/bin/mnemos)" autocomplete="off" spellcheck="false"
+            <input id="mncmd" value={cmd ?? m?.mnemos_command ?? ""} placeholder="mnemos (leave empty to find it automatically)" autocomplete="off" spellcheck="false"
               oninput={(e) => (cmd = e.currentTarget.value)}
               onchange={async () => { await setting({ mnemos_command: cmd }); cmd = null; loadMnemos(); }} />
           </div>
@@ -201,25 +208,78 @@
   </div>
 
   <div class="group">
-    <h2>What Mnemos holds{mn?.status?.version ? ` · v${mn.status.version}` : ""}</h2>
+    <h2>Status</h2>
     <div class="rows">
       {#if !mn}
-        <div class="row"><span class="meta">Loading…</span></div>
+        <div class="row"><span class="meta">Checking…</span></div>
       {:else if mn.error}
-        <div class="row"><span class="meta">{mn.error}</span></div>
+        <div class="row"><span class="meta">Mnemos isn't responding: {mn.error}</span></div>
       {:else}
         <div class="row">
-          <input class="wide" bind:value={mnQ} oninput={searchMnemos} placeholder="Search what Lark remembers" aria-label="Search Mnemos" />
-          {#if mnHits !== null}<pre class="card">{mnHits}</pre>{/if}
+          <span class="row-title"><span class="dot good"></span> Mnemos is running{mn.status?.version ? ` (v${mn.status.version})` : ""}</span>
+          <p class="meta" style="margin:0">
+            {mn.stats?.memories ?? 0} {mn.stats?.memories === 1 ? "memory" : "memories"} kept ·
+            search by meaning {mn.stats?.meaning_search ? "on" : "off (words only)"}
+            {#if mn.stats?.journal} · {mn.stats.journal} journal {mn.stats.journal === 1 ? "entry" : "entries"}{/if}
+          </p>
+          {#if !mn.stats?.memories}
+            <p class="meta" style="margin:0">
+              Nothing yet. Lark saves things as you talk about them (look for "Remembered" under its replies), or ask it directly: "remember that…".
+            </p>
+          {/if}
         </div>
-        {#if mn.briefing}
-          <div class="row"><span class="row-title">Standing instructions and notes</span><pre class="card">{mn.briefing}</pre></div>
-        {/if}
-        <div class="row"><span class="row-title">Health</span><pre class="card">{mn.health}</pre></div>
       {/if}
     </div>
-    <p class="meta" style="margin:8px 4px 0">Mnemos is Lark's own memory: it writes, corrects and lets go of memories itself, so this page only reads it. The file is in Lark's data folder under <code>mnemos/.mnemos</code>; delete it there to start over.</p>
   </div>
+
+  <div class="group">
+    <h2>Recent activity</h2>
+    <div class="rows">
+      {#each mn?.activity ?? [] as a}
+        <div class="row">
+          <span class="row-title">{a.label}{a.ok ? "" : " (failed)"}</span>
+          <span>{a.text}</span>
+          <span class="meta">{ago(a.ts)}{#if a.chat} · <button class="link" onclick={() => onopen(a.chat)}>open chat</button>{/if}</span>
+        </div>
+      {:else}
+        <div class="row"><span class="meta">Nothing yet. What Lark remembers, recalls or corrects will show up here.</span></div>
+      {/each}
+    </div>
+  </div>
+
+  {#if mn?.standing?.length}
+  <div class="group">
+    <h2>Always in mind</h2>
+    <div class="rows">
+      {#each mn.standing as t}<div class="row">{t}</div>{/each}
+    </div>
+    <p class="meta" style="margin:8px 4px 0">Standing instructions: how you've asked Lark to behave, in every chat.</p>
+  </div>
+  {/if}
+
+  <div class="group">
+    <h2>Search its memory</h2>
+    <div class="rows">
+      <div class="row">
+        <input class="wide" bind:value={mnQ} oninput={searchMnemos} placeholder="Search what Lark remembers" aria-label="Search Mnemos" />
+        {#if mnHits !== null}
+          {#each mnHits as h}
+            <div><span>{h.text}</span>{#if h.kept}<span class="meta"> · kept {h.kept}</span>{/if}</div>
+          {:else}
+            <span class="meta">Nothing found.</span>
+          {/each}
+        {/if}
+      </div>
+    </div>
+    <p class="meta" style="margin:8px 4px 0">Mnemos writes, corrects and lets go of memories itself, so this page only reads it. It lives in Lark's data folder under <code>mnemos/.mnemos</code>; delete it there to start over.</p>
+  </div>
+
+  {#if mn?.details}
+  <details class="group tech">
+    <summary class="meta">Technical details</summary>
+    <pre class="card">{mn.details}</pre>
+  </details>
+  {/if}
   {:else}
   <div class="group">
     <h2>How it works</h2>
@@ -363,6 +423,9 @@
 </section>
 
 <style>
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 6px; }
+  .tech { margin-top: 12px; }
+  .tech summary { cursor: pointer; padding: 4px; }
   .card {
     white-space: pre-wrap; font: inherit; font-size: 0.9em; line-height: 1.45; margin: 8px 0 0; padding: 10px 12px;
     border-radius: 12px; background: var(--glass); max-height: 320px; overflow: auto;

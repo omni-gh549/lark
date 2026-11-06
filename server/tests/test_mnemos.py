@@ -96,8 +96,15 @@ run("Lark's own notes stay out of the prompt", "Maya" not in sysmsg and "Possibl
 calls = [json.loads(l) for l in (MN_HOME / "calls.jsonl").read_text().splitlines()]
 run("Mnemos is told which model is writing", any(x["name"] == "mnemos_introduce" and x["args"].get("agent_model") == "a/model" for x in calls))
 ov = c.get("/api/mnemos").json()
-run("the Memory page can read Mnemos", ov["status"]["installed"] and "health card" in ov["health"] and "Dr Okafor" in ov["briefing"])
-run("Mnemos memory search", "Okafor" in c.get("/api/mnemos/search?q=dentist okafor").json()["text"])
+run("the Memory page has plain numbers, standing notes and a details card", ov["status"]["installed"] and ov["stats"]["memories"] >= 1
+    and any("Dr Okafor" in t for t in ov["standing"]) and "safe to relay" not in ov["details"])
+act = ov["activity"]
+run("the Memory page lists what Mnemos was asked to remember, newest first", act and act[0]["label"] in ("Remembered", "Recalled")
+    and any(a["label"] == "Remembered" and "Okafor" in a["text"] for a in act))
+tt = {t.name: t for t in c.portal.call(_tools.available)}
+run("chat chips read like plain words", tt["mnemos_capture"].title == "Remembered" and tt["mnemos_capture"].detail({"content": "Likes tea"}) == "Likes tea"
+    and tt["mnemos_recall"].title == "Recalled")
+run("Mnemos memory search", any("Okafor" in i["text"] for i in c.get("/api/mnemos/search?q=dentist okafor").json()["items"]))
 run("learning pass is off with Mnemos", memory.enabled() is False)
 n = len(memory.list_facts())
 c.post("/api/chats/mnchat-0002/send", json={"content": "My cat is called Miso and she sleeps all day."})
@@ -110,7 +117,7 @@ run("Lark's own learner writes nothing while Mnemos is chosen", len(memory.list_
 run("the briefing is reused, not fetched for every message", sum(x["name"] == "mnemos_context" for x in
     [json.loads(l) for l in (MN_HOME / "calls.jsonl").read_text().splitlines()]) <= 3)
 c.portal.call(mnemos.shutdown)
-run("Mnemos restarts by itself on demand", "Okafor" in c.get("/api/mnemos/search?q=dentist okafor").json()["text"])
+run("Mnemos restarts by itself on demand", any("Okafor" in i["text"] for i in c.get("/api/mnemos/search?q=dentist okafor").json()["items"]))
 c.put("/api/settings", json={"memory_use": False})
 run("memory off removes the Mnemos tools too", "mnemos_capture" not in "".join(e.get("text", "") for e in chat("tools")))
 c.put("/api/settings", json={"memory_use": True, "memory_backend": "lark"})

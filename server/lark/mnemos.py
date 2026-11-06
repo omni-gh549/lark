@@ -18,6 +18,7 @@ Everything is configurable: the command in Settings (or LARK_MNEMOS_COMMAND), th
 import asyncio
 import json
 import os
+import re
 import shlex
 import shutil
 import time
@@ -60,7 +61,11 @@ def home() -> str:
 
 
 def command() -> list[str]:
-    raw = (vault.load().get("mnemos_command") or os.environ.get("LARK_MNEMOS_COMMAND") or "mnemos").strip()
+    raw = (vault.load().get("mnemos_command") or os.environ.get("LARK_MNEMOS_COMMAND") or "").strip()
+    if not raw:
+        # no setup: `mnemos` on the PATH, else where deploy/install-mnemos.sh puts it
+        installed = "/opt/mnemos/bin/mnemos"
+        raw = "mnemos" if shutil.which("mnemos") or not os.path.exists(installed) else installed
     try:
         if os.path.exists(raw):
             parts = [raw]  # a plain path, spaces and all
@@ -85,6 +90,9 @@ def _child_env() -> dict:
         "MNEMOS_SHARED_MEMORY": "off",  # nothing here is shared with other agents on the machine
         "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8", "NO_COLOR": "1",
     })
+    hf = os.environ.get("LARK_MNEMOS_MODELS") or "/opt/mnemos/hf"
+    if "HF_HOME" not in env and os.path.isdir(hf):
+        env.update({"HF_HOME": hf, "HF_HUB_OFFLINE": "1"})  # the embedding model deploy/install-mnemos.sh downloaded; no network at run time
     return env
 
 
@@ -282,6 +290,78 @@ async def context(chat_id: str, history_text: str, model: str) -> str:
     return "\n".join(parts).strip()
 
 
+# Short, plain titles for the chat (a tool chip reads "Remembered · The user's cat is called Miso").
+LABELS = {"mnemos_capture": "Remembered", "mnemos_recall": "Recalled", "mnemos_correct": "Updated a memory",
+          "mnemos_reflect": "Reflected on a memory", "mnemos_handoff": "Left itself a note", "mnemos_journal": "Wrote in its journal",
+          "mnemos_note": "Left you a note"}
+_MAIN_FIELD = {"mnemos_capture": "content", "mnemos_recall": "query", "mnemos_correct": "correction", "mnemos_reflect": "text",
+               "mnemos_handoff": "text", "mnemos_journal": "text", "mnemos_note": "text"}
+
+
+def _detail(name: str, args: dict) -> str:
+    text = str(args.get(_MAIN_FIELD.get(name, ""), "") or args.get("query") or args.get("target_id") or "")
+    return " ".join(text.split())[:100]
+
+
+# ---- what Mnemos has been doing -----------------------------------------------------------------------------------
+# Mnemos keeps its own memory; this small log (data/mnemos/activity.jsonl) only records Lark's calls to it, so the Memory page
+# can show what was remembered or recalled and when.
+
+MAX_ACTIVITY = 300
+
+
+def _activity_path():
+    return os.path.join(home(), "activity.jsonl")
+
+
+def log_activity(name: str, args: dict, ok: bool) -> None:
+    try:
+        from . import memory
+        row = {"ts": time.time(), "tool": name, "label": LABELS.get(name, name), "text": " ".join(str(args.get(_MAIN_FIELD.get(name, ""), "") or args.get("query", "")).split())[:300],
+               "chat": memory.CURRENT_CHAT.get(), "ok": ok}
+        path = _activity_path()
+        os.makedirs(home(), exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(row) + "\n")
+        if os.path.getsize(path) > 200_000:  # trim to the newest rows now and then
+            rows = open(path, encoding="utf-8").read().splitlines()[-MAX_ACTIVITY:]
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("\n".join(rows) + "\n")
+    except Exception:
+        pass  # a log must never get in the way of memory
+
+
+def recent_activity(limit: int = 40) -> list[dict]:
+    try:
+        rows = open(_activity_path(), encoding="utf-8").read().splitlines()[-limit:]
+        return [json.loads(r) for r in reversed(rows)]
+    except (OSError, ValueError):
+        return []
+
+
+def parse_health(card: str) -> dict:
+    """The few numbers the Memory page shows, out of Mnemos's health card."""
+    def num(pattern):
+        m = re.search(pattern, card)
+        return int(m.group(1)) if m else 0
+    sem = re.search(r"^Semantic:\s+(\w+)", card, re.M)
+    return {"memories": num(r"Memories:\s+(\d+) active"), "dormant": num(r"(\d+) dormant"), "archived": num(r"(\d+) archived"),
+            "journal": num(r"Journal:\s+(\d+) entr"), "meaning_search": bool(sem and sem.group(1).lower() == "on"),
+            "created": "not created yet" not in card and "No memory store exists" not in card}
+
+
+def parse_items(text: str) -> list[dict]:
+    """Memories in a recall result: '- [how it matched] words' followed by an 'id=... kept DATE' line."""
+    items: list[dict] = []
+    for line in text.splitlines():
+        m = re.match(r"^\s*-\s+(?:\[[^\]]*\]\s*)?(.+)$", line)
+        if m and not line.startswith("  "):
+            items.append({"text": m.group(1).strip(), "kept": ""})
+        elif items and (k := re.search(r"kept (\d{4}-\d{2}-\d{2})", line)):
+            items[-1]["kept"] = k.group(1)
+    return items
+
+
 def _strip_signed(schema: dict) -> dict:
     props = {k: v for k, v in (schema.get("properties") or {}).items() if k not in ("signed_as", "shared")}
     out = {**schema, "properties": props}
@@ -318,17 +398,16 @@ async def model_tools(Tool) -> list:
                 text = await CLIENT.call(_name, args)
             except MnemosError as e:
                 from .tools import ToolError
+                log_activity(_name, args, False)
                 raise ToolError(str(e))
+            log_activity(_name, args, True)
             if _name in WRITE_TOOLS:
                 forget_briefing()
             return text
 
         schema = _strip_signed(spec.get("inputSchema") or {"type": "object", "properties": {}})
         desc = " ".join((spec.get("description") or "").split())[:1500]
-        title = name.replace("mnemos_", "").capitalize()
-        first = next(iter(schema.get("properties") or {}), "")
-        out.append(Tool(name, f"Mnemos {title.lower()}", desc, schema, run,
-                        lambda a, _f=first: str(a.get(_f, ""))[:100] if _f else ""))
+        out.append(Tool(name, LABELS.get(name, name), desc, schema, run, lambda a, _n=name: _detail(_n, a)))
     return out
 
 
@@ -353,13 +432,15 @@ def _safe_command() -> list[str]:
 
 
 async def overview() -> dict:
-    """For the Memory page: the health card and the briefing, read-only."""
-    out = {"health": "", "briefing": "", "error": ""}
+    """For the Memory page: plain numbers, what it keeps standing, and what it has done lately. Read-only."""
+    out = {"stats": None, "standing": [], "activity": recent_activity(), "details": "", "error": ""}
     try:
         if not CLIENT.running():
             await CLIENT.start()
-        out["health"] = await CLIENT.call("mnemos_health")
-        out["briefing"] = await CLIENT.call("mnemos_recall", {"query": "", "standing": True, "max_results": 10})
+        card = await CLIENT.call("mnemos_health")
+        out["stats"] = parse_health(card)
+        out["details"] = "\n".join(l for l in card.splitlines() if "safe to relay" not in l).strip()
+        out["standing"] = [i["text"] for i in parse_items(await CLIENT.call("mnemos_recall", {"query": "", "standing": True, "max_results": 20}))]
     except MnemosError as e:
         out["error"] = str(e)
     return out
@@ -369,3 +450,7 @@ async def search(query: str) -> str:
     if not query.strip():
         return ""
     return await CLIENT.call("mnemos_recall", {"query": query[:500], "max_results": 15})
+
+
+async def search_items(query: str) -> list[dict]:
+    return parse_items(await search(query))

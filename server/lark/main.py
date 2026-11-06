@@ -206,7 +206,7 @@ async def mnemos_overview():
 @app.get("/api/mnemos/search")
 async def mnemos_search(q: str = ""):
     try:
-        return {"text": await mnemos.search(q)}
+        return {"items": await mnemos.search_items(q)}
     except mnemos.MnemosError as e:
         return err(502, str(e))
 
