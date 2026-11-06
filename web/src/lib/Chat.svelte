@@ -37,6 +37,11 @@
   }
 
   // the address of the latest page Lark opened (the detail of a "goto" step)
+  const worked = (s, n) => {
+    if (!s) return `Worked · ${n} ${n === 1 ? "step" : "steps"}`;
+    const m = Math.floor(s / 60);
+    return `Worked for ${m ? `${m}m ` : ""}${s % 60}s`;
+  };
   const browserUrl = (parts) => parts.findLast((p) => p.name === "browser" && /^\S+\.\S+$/.test(p.detail ?? ""))?.detail ?? "";
 
   function onpaste(e) {
@@ -189,7 +194,15 @@
         {@const live = chat.busy && m === chat.messages.findLast((x) => x.role === "assistant")}
         {@const lastPart = m.parts?.at(-1)}
         {@const active = (m.parts ?? []).filter((p) => p.type === "tool" && p.state === "running")}
+        {@const tools = (m.parts ?? []).filter((p) => p.type === "tool" && p.state !== "running")}
+        {@const folded = !live && tools.length > 0}
         <div class="turn">
+          {#if folded}
+            <details class="worked">
+              <summary>{worked(m.worked, tools.length)}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></summary>
+              <div class="worked-list">{#each tools as t}<ToolChip part={t} />{/each}</div>
+            </details>
+          {/if}
           {#each m.parts ?? [{ type: "text", text: m.content }] as p}
             {#if p.type === "text"}
               {#each p.text ? segments(p.text) : [] as s}
@@ -207,7 +220,7 @@
                 {p.content}
               </div>
             {:else if p.state !== "running"}
-              <ToolChip part={p} />
+              {#if !folded}<ToolChip part={p} />{/if}
               {#each p.images ?? [] as id}
                 <a class="shot" href="/api/files/{id}" target="_blank" rel="noopener"><img src="/api/files/{id}" alt="Shown by Lark" /></a>
               {/each}

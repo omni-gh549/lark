@@ -157,6 +157,13 @@ async function attach(id, messages) {
   controller = null;
   watching = false;
   chat.busy = false;
+  if (!failed && reply.parts.some((p) => p.type === "tool")) {
+    // the server timed the reply when it saved it; ask for that so the page and a reload agree
+    api(`/api/chats/${id}`).then(
+      (doc) => (reply.worked = doc.messages?.findLast((m) => m.role === "assistant")?.worked),
+      () => {},
+    );
+  }
   refreshList();
   if (chat.pending) {
     // messages were sent while this reply was running: the server answers them next, so pick that run up

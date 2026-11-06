@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Lark</title>
+<style>
+  :root { color-scheme: light dark; --bg: #e9e8e5; --ink: #1d1f22; --soft: #6b6e73; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #111317; --ink: #e8e9eb; --soft: #8b8f96; } }
+  html, body { height: 100%; margin: 0; }
+  body { display: grid; place-items: center; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, sans-serif; text-align: center; padding: 24px; }
+  h1 { font-size: 20px; font-weight: 500; margin: 0 0 6px; }
+  p { margin: 0; color: var(--soft); }
+</style>
+</head>
+<body>
+  <main>
+    <h1>Lark is restarting</h1>
+    <p>Back in a few seconds. This page will reload by itself.</p>
+  </main>
+<script>
+  // poll the real site; reload as soon as it answers with something other than this page
+  const tick = async () => {
+    try {
+      const r = await fetch("/api/login", { method: "HEAD", cache: "no-store" });
+      if (r.status < 500) return location.reload();
+    } catch {}
+    setTimeout(tick, 1500);
+  };
+  setTimeout(tick, 1500);
+</script>
+</body>
+</html>

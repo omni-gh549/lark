@@ -25,6 +25,7 @@ _runs: dict[str, "Run"] = {}
 class Run:
     def __init__(self, chat_id: str):
         self.chat_id = chat_id
+        self.started = time.time()
         self.events: list[dict] = []
         self.waiters: set[asyncio.Event] = set()
         self.finished = False
@@ -191,7 +192,7 @@ async def resume_all():
             path.unlink(missing_ok=True)
             continue
         doc = chats.load(chat_id)
-        conf = main.ready()
+        conf = main.ready(chat_id)
         if not doc or not doc["messages"] or doc["messages"][-1].get("role") != "user":
             _unjournal(chat_id)  # nothing waiting for an answer
             continue
@@ -265,6 +266,8 @@ async def _execute(run: Run, name: str, key: str, model: str, history: list[dict
             if not run.discard:
                 doc = chats.load(run.chat_id) or {"messages": []}
                 msgs = saved_messages(run.events)
+                if msgs and msgs[-1].get("role") == "assistant" and any(p.get("type") == "tool" for p in msgs[-1].get("parts", [])):
+                    msgs[-1]["worked"] = max(1, int(time.time() - run.started))  # seconds, for "Worked for 1m 20s"
                 messages = doc["messages"]
                 if any(m.get("role") == "assistant" for m in msgs):
                     # messages sent while it was busy are already saved after the question: the reply goes before them
