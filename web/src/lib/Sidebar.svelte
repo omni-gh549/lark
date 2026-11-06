@@ -10,6 +10,7 @@
   let menuOpen = $state(false);
   let searching = $state(false);
   let query = $state("");
+  let confirming = $state(null); // id of the chat whose delete is awaiting confirmation
   let searchEl = $state();
 
   const shown = $derived.by(() => {
@@ -77,7 +78,8 @@
         return;
       }
       if (e.key !== "Escape") return;
-      if (menuOpen) menuOpen = false;
+      if (confirming) confirming = null;
+      else if (menuOpen) menuOpen = false;
       else if (searching) endSearch();
       else if (drawer) drawer = false;
     };
@@ -177,14 +179,20 @@
     <div class="side-label">Recents</div>
     <div class="side-list">
       {#each shown as c (c.id)}
-        <div class="side-row" class:current={c.id === chat.id && route === "chat"}>
-          <button class="side-pick" onclick={() => pick(c.id)}>
-            {#if c.running}<span class="dot live"></span>{/if}
-            <span class="side-title">{c.title}</span>
-          </button>
-          <button class="side-del" aria-label="Delete chat" title={when(c.updated)} onclick={() => deleteChat(c.id)}>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>
-          </button>
+        <div class="side-row" class:current={c.id === chat.id && route === "chat"} class:asking={confirming === c.id}>
+          {#if confirming === c.id}
+            <span class="side-title ask-text">Delete chat?</span>
+            <button class="ask-btn danger" onclick={() => { confirming = null; deleteChat(c.id); }}>Delete</button>
+            <button class="ask-btn" onclick={() => (confirming = null)}>Cancel</button>
+          {:else}
+            <button class="side-pick" onclick={() => pick(c.id)}>
+              {#if c.running}<span class="dot live"></span>{/if}
+              <span class="side-title">{c.title}</span>
+            </button>
+            <button class="side-del" aria-label="Delete chat" title={when(c.updated)} onclick={() => (confirming = c.id)}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>
+            </button>
+          {/if}
         </div>
       {:else}
         <p class="side-empty">{query ? "No matching chats." : "No saved chats yet."}</p>

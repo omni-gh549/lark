@@ -540,3 +540,8 @@ main { min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); grid-te
 .side-pages button { min-height: 0; }
 .stop-label { width: 76px; flex: none; }
 .field:has(.stop-label) { align-items: center; }
+.side-row.asking { background: var(--sel); padding: 4px 6px 4px 10px; gap: 6px; }
+.ask-text { flex: 1; min-width: 0; font-size: 14px; }
+.ask-btn { padding: 4px 8px; border-radius: 999px; font-size: 13px; background: var(--glass-strong); }
+.ask-btn.danger { color: var(--danger); }
+@media (max-width: 760px) { .ask-btn { min-height: 40px; padding-inline: 12px; } }
