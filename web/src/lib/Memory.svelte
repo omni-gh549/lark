@@ -167,7 +167,7 @@
         {#if mnemosOn}
           <label class="row-title" for="mncmd">Mnemos command</label>
           <div class="field">
-            <input id="mncmd" value={cmd ?? m?.mnemos_command ?? ""} placeholder="mnemos (or the full path, e.g. /opt/mnemos/bin/mnemos)" autocomplete="off" spellcheck="false"
+            <input id="mncmd" value={cmd ?? m?.mnemos_command ?? ""} placeholder="mnemos (leave empty to find it automatically)" autocomplete="off" spellcheck="false"
               oninput={(e) => (cmd = e.currentTarget.value)}
               onchange={async () => { await setting({ mnemos_command: cmd }); cmd = null; loadMnemos(); }} />
           </div>

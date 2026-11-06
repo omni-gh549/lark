@@ -60,7 +60,11 @@ def home() -> str:
 
 
 def command() -> list[str]:
-    raw = (vault.load().get("mnemos_command") or os.environ.get("LARK_MNEMOS_COMMAND") or "mnemos").strip()
+    raw = (vault.load().get("mnemos_command") or os.environ.get("LARK_MNEMOS_COMMAND") or "").strip()
+    if not raw:
+        # no setup: `mnemos` on the PATH, else where deploy/install-mnemos.sh puts it
+        installed = "/opt/mnemos/bin/mnemos"
+        raw = "mnemos" if shutil.which("mnemos") or not os.path.exists(installed) else installed
     try:
         if os.path.exists(raw):
             parts = [raw]  # a plain path, spaces and all
