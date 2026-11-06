@@ -16,6 +16,8 @@ DEFAULTS = {
     "search": "brave",
     "browser_cookies": False,  # keep the sandbox browser's cookies and logins between sessions
     "memory_use": True,  # remember across chats: the notes in the prompt and the memory tools
+    "memory_backend": "lark",  # "lark" (notes, chat search, learning pass) or "mnemos" (Mnemos replaces all of that)
+    "mnemos_command": "",  # how to start Mnemos (empty = LARK_MNEMOS_COMMAND, else "mnemos")
     "memory_learn": True,  # learn from conversations automatically, after each reply
     "generative_ui": True,  # let the web chat show tables, plans and checklists as small interfaces (OpenUI)
     "memory_model": "",  # optional cheaper model for the learning pass (empty = the chat model)
@@ -74,6 +76,8 @@ def load() -> dict:
         "generative_ui": bool(data.get("generative_ui", True)),
         "memory_use": bool(data.get("memory_use", True)),
         "memory_learn": bool(data.get("memory_learn", True)),
+        "memory_backend": "mnemos" if data.get("memory_backend") == "mnemos" else "lark",
+        "mnemos_command": str(data.get("mnemos_command", "")).strip(),
         "memory_model": str(data.get("memory_model", DEFAULTS["memory_model"])),
         "title_model": str(data.get("title_model", DEFAULTS["title_model"])),
         "embedding_model": str(data.get("embedding_model", DEFAULTS["embedding_model"])),
@@ -100,7 +104,7 @@ def _save(data: dict):
     os.replace(tmp, SETTINGS)
 
 
-def update(provider=None, models=None, search=None, browser_cookies=None, memory_use=None, memory_learn=None, embedding_model=None, memory_model=None, generative_ui=None, title_model=None, tiers=None):
+def update(provider=None, models=None, search=None, browser_cookies=None, memory_use=None, memory_learn=None, embedding_model=None, memory_model=None, generative_ui=None, title_model=None, tiers=None, memory_backend=None, mnemos_command=None):
     data = load()
     if tiers is not None:
         key = "tiers_opencode" if data["provider"] == "opencode" else "tiers"
@@ -111,6 +115,10 @@ def update(provider=None, models=None, search=None, browser_cookies=None, memory
         data["browser_cookies"] = bool(browser_cookies)
     if memory_use is not None:
         data["memory_use"] = bool(memory_use)
+    if memory_backend in ("lark", "mnemos"):
+        data["memory_backend"] = memory_backend
+    if mnemos_command is not None:
+        data["mnemos_command"] = mnemos_command.strip()[:500]
     if memory_learn is not None:
         data["memory_learn"] = bool(memory_learn)
     if memory_model is not None:

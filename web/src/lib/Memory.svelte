@@ -20,6 +20,12 @@
   let convoTimer;
 
   const m = $derived(app.settings?.memory);
+  const mnemosOn = $derived(m?.backend === "mnemos");
+  let mn = $state(null); // { status, health, briefing, error } while Mnemos is the backend
+  let mnQ = $state("");
+  let mnHits = $state(null);
+  let cmd = $state(null); // the command box, once edited
+  let mnTimer;
   const say = (text, k = "") => (note = { text, kind: k });
   const day = (t) => new Date(t * 1000).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
 
@@ -102,12 +108,119 @@
     }, 250);
   }
 
+  async function loadMnemos() {
+    try {
+      mn = await api("/api/mnemos");
+    } catch (e) {
+      say(e.message, "bad");
+    }
+  }
+
+  function searchMnemos() {
+    clearTimeout(mnTimer);
+    mnTimer = setTimeout(async () => {
+      if (!mnQ.trim()) return (mnHits = null);
+      try {
+        mnHits = (await api(`/api/mnemos/search?q=${encodeURIComponent(mnQ)}`)).text;
+      } catch (e) {
+        say(e.message, "bad");
+      }
+    }, 300);
+  }
+
+  async function chooseBackend(backend) {
+    const body = { memory_backend: backend };
+    if (backend === "mnemos" && cmd !== null) body.mnemos_command = cmd;
+    await setting(body);
+    mn = null;
+    if (app.settings?.memory?.backend !== "mnemos") load();
+  }
+
   onMount(load);
+  $effect(() => {
+    if (mnemosOn && !mn) loadMnemos();
+  });
 </script>
 
 <section class="page">
   <h1>Memory</h1>
 
+  <div class="group">
+    <h2>Memory system</h2>
+    <div class="rows">
+      <div class="row">
+        <div class="row-head">
+          <span class="row-title">Which memory Lark uses</span>
+          <div class="seg" role="group" aria-label="Memory system">
+            <button aria-pressed={!mnemosOn} onclick={() => chooseBackend("lark")}>Lark</button>
+            <button aria-pressed={mnemosOn} onclick={() => chooseBackend("mnemos")}>Mnemos</button>
+          </div>
+        </div>
+        <p class="meta" style="margin:0">
+          {#if mnemosOn}
+            <a href="https://github.com/Riley-Coyote/mnemos-mcp" target="_blank" rel="noreferrer">Mnemos</a> keeps a memory in Lark's own words, in one file on this server. Lark wakes with it, saves what matters as it goes, and its memories fade unless they are used.
+            The notes, chat search and learning pass of Lark's memory are off while it is chosen, and come back untouched if you switch back.
+          {:else}
+            Lark's own: notes that a background pass keeps up to date, plus search across every past chat. Choose Mnemos to give Lark a memory that it writes and tends itself.
+          {/if}
+        </p>
+        {#if mnemosOn}
+          <label class="row-title" for="mncmd">Mnemos command</label>
+          <div class="field">
+            <input id="mncmd" value={cmd ?? m?.mnemos_command ?? ""} placeholder="mnemos (or the full path, e.g. /opt/mnemos/bin/mnemos)" autocomplete="off" spellcheck="false"
+              oninput={(e) => (cmd = e.currentTarget.value)}
+              onchange={async () => { await setting({ mnemos_command: cmd }); cmd = null; loadMnemos(); }} />
+          </div>
+        {:else}
+          <label class="row-title" for="mncmd">Mnemos command (used when you choose Mnemos)</label>
+          <div class="field">
+            <input id="mncmd" value={cmd ?? m?.mnemos_command ?? ""} placeholder="mnemos (or the full path)" autocomplete="off" spellcheck="false"
+              oninput={(e) => (cmd = e.currentTarget.value)} />
+          </div>
+        {/if}
+        <p class="status {note.kind}">{note.text}</p>
+      </div>
+    </div>
+  </div>
+
+  {#if mnemosOn}
+  <div class="group">
+    <h2>Remember across chats</h2>
+    <div class="rows">
+      <div class="row">
+        <div class="row-head">
+          <span class="row-title">Use Mnemos in chats</span>
+          <div class="seg" role="group" aria-label="Use memory">
+            <button aria-pressed={!m?.use} onclick={() => setting({ memory_use: false })}>Off</button>
+            <button aria-pressed={m?.use} onclick={() => setting({ memory_use: true })}>On</button>
+          </div>
+        </div>
+        <p class="meta" style="margin:0">Off stops Lark waking with its memory and writing to it. Nothing is deleted.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="group">
+    <h2>What Mnemos holds{mn?.status?.version ? ` · v${mn.status.version}` : ""}</h2>
+    <div class="rows">
+      {#if !mn}
+        <div class="row"><span class="meta">Loading…</span></div>
+      {:else if mn.error}
+        <div class="row"><span class="meta">{mn.error}</span></div>
+      {:else}
+        <div class="row">
+          <input class="wide" bind:value={mnQ} oninput={searchMnemos} placeholder="Search what Lark remembers" aria-label="Search Mnemos" />
+          {#if mnHits !== null}<pre class="card">{mnHits}</pre>{/if}
+        </div>
+        {#if mn.briefing}
+          <div class="row"><span class="row-title">Standing instructions and notes</span><pre class="card">{mn.briefing}</pre></div>
+        {/if}
+        <div class="row"><span class="row-title">Health</span><pre class="card">{mn.health}</pre></div>
+      {/if}
+    </div>
+    <p class="meta" style="margin:8px 4px 0">Mnemos is Lark's own memory: it writes, corrects and lets go of memories itself, so this page only reads it. The file is in Lark's data folder under <code>mnemos/.mnemos</code>; delete it there to start over.</p>
+  </div>
+  {:else}
   <div class="group">
     <h2>How it works</h2>
     <div class="rows">
@@ -246,9 +359,14 @@
       </div>
     </div>
   </div>
+  {/if}
 </section>
 
 <style>
+  .card {
+    white-space: pre-wrap; font: inherit; font-size: 0.9em; line-height: 1.45; margin: 8px 0 0; padding: 10px 12px;
+    border-radius: 12px; background: var(--glass); max-height: 320px; overflow: auto;
+  }
   .fact {
     text-align: left; padding: 2px 0; width: 100%; line-height: 1.45; border-radius: 8px;
   }

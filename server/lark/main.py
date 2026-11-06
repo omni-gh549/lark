@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import agent, auth, chats, files, health, memory, notion, providers, runs, stats, sandbox, search, telegram, timeline, titles, tools, vault
+from . import agent, auth, chats, files, health, memory, mnemos, notion, providers, runs, stats, sandbox, search, telegram, timeline, titles, tools, vault
 
 KEY_NAMES = set(providers.PROVIDERS) | set(search.SEARCH_PROVIDERS) | {"telegram", "notion"}
 DIST = Path(os.environ.get("LARK_DIST", Path(__file__).resolve().parents[2] / "web" / "dist"))
@@ -32,6 +32,7 @@ async def lifespan(_app):
     backfill.cancel()
     catch_up.cancel()
     await asyncio.gather(poller, backfill, catch_up, return_exceptions=True)  # let them finish cancelling before the server exits
+    await mnemos.shutdown()  # stop the Mnemos child, if one is running
 
 
 async def _catch_up_memory():
@@ -121,7 +122,7 @@ def view_settings() -> dict:
         "search": s["search"],
         "browser_cookies": s["browser_cookies"],
         "generative_ui": s["generative_ui"],
-        "memory": {"use": s["memory_use"], "learn": s["memory_learn"], "embedding_model": s["embedding_model"], "memory_model": s["memory_model"], **memory.stats()},
+        "memory": {"use": s["memory_use"], "backend": s["memory_backend"], "mnemos_command": s["mnemos_command"], "learn": s["memory_learn"], "embedding_model": s["embedding_model"], "memory_model": s["memory_model"], **memory.stats()},
         "title_model": s["title_model"],
         "tiers": vault.active_tiers(s),
         "auth": bool(auth.password()),
@@ -152,6 +153,8 @@ class SettingsIn(BaseModel):
     generative_ui: bool | None = None
     memory_use: bool | None = None
     memory_learn: bool | None = None
+    memory_backend: str | None = Field(default=None, pattern="^(lark|mnemos)$")
+    mnemos_command: str | None = Field(default=None, max_length=500)
     embedding_model: str | None = Field(default=None, max_length=200)
     memory_model: str | None = Field(default=None, max_length=200)
     title_model: str | None = Field(default=None, max_length=200)
@@ -169,9 +172,37 @@ async def put_settings(body: SettingsIn):
     if body.embedding_model is not None and body.embedding_model.strip() != vault.load()["embedding_model"]:
         memory.reset_embeddings()  # vectors from another model aren't comparable
         memory.schedule_embed()
+    if body.mnemos_command is not None and body.mnemos_command.strip() != vault.load()["mnemos_command"]:
+        await mnemos.shutdown()  # a new command means a new child
+    if body.memory_backend == "mnemos" or body.mnemos_command is not None:
+        # check Mnemos can start before switching to it, so the owner never ends up with no memory and no explanation
+        old = vault.load()["mnemos_command"]
+        vault.update(mnemos_command=body.mnemos_command)
+        if body.memory_backend == "mnemos":
+            st = await mnemos.status()
+            if not st["installed"]:
+                vault.update(mnemos_command=old)
+                return err(400, st["error"] or "Mnemos could not start.")
+    if body.memory_backend and body.memory_backend != vault.load()["memory_backend"]:
+        mnemos.forget_briefing()
     vault.update(body.provider, {k: v.strip() for k, v in (body.models or {}).items()}, body.search, body.browser_cookies,
-                 body.memory_use, body.memory_learn, body.embedding_model, body.memory_model, body.generative_ui, body.title_model, body.tiers)
+                 body.memory_use, body.memory_learn, body.embedding_model, body.memory_model, body.generative_ui, body.title_model, body.tiers,
+                 body.memory_backend)
     return view_settings()
+
+
+@app.get("/api/mnemos")
+async def mnemos_overview():
+    """Status plus the read-only Memory page for the Mnemos backend."""
+    return {"status": await mnemos.status(), **(await mnemos.overview())}
+
+
+@app.get("/api/mnemos/search")
+async def mnemos_search(q: str = ""):
+    try:
+        return {"text": await mnemos.search(q)}
+    except mnemos.MnemosError as e:
+        return err(502, str(e))
 
 
 class KeyIn(BaseModel):

@@ -11,7 +11,7 @@ import os
 import tempfile
 import time
 
-from . import agent, chats, health, memory, providers, sandbox, timeline, titles, vault
+from . import agent, chats, health, memory, mnemos, providers, sandbox, timeline, titles, vault
 
 log = logging.getLogger("lark")
 
@@ -222,6 +222,7 @@ async def _execute(run: Run, name: str, key: str, model: str, history: list[dict
     error = None
     memory.CURRENT_CHAT.set(run.chat_id)  # the memory tools record where a note came from
     memory.CURRENT_VIA.set(run.via)
+    mnemos.CURRENT_MODEL.set(model)  # Mnemos signs what the model writes with its id
     try:
         try:
             notes = await memory.context(run.chat_id, history)

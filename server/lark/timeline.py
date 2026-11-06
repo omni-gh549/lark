@@ -172,8 +172,7 @@ async def merge_all(name: str, key: str, model: str) -> int:
 # ---- keeping it up to date ---------------------------------------------------------------------------------------
 
 def _wanted() -> bool:
-    s = memory.settings()
-    return bool(s["use"] and s["learn"])
+    return bool(memory.enabled() and memory.settings()["learn"])
 
 
 async def update(chat_id: str, name: str, key: str, model: str) -> None:

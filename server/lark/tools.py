@@ -7,7 +7,7 @@ import base64
 import re
 import time
 
-from . import files, memory, notion, sandbox, search, vault
+from . import files, memory, mnemos, notion, sandbox, search, vault
 
 MAX_OUTPUT = 12_000
 
@@ -583,6 +583,8 @@ async def available() -> list[Tool]:
         tools.append(WEB_SEARCH)
     if memory.enabled():
         tools += MEMORY_TOOLS
+    elif mnemos.active():
+        tools += await mnemos.model_tools(Tool)
     if notion_ready():
         tools += NOTION_TOOLS
     if telegram.contacts_ready():

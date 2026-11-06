@@ -553,7 +553,7 @@ async def triage(name: str, scope: str, text: str, reply: str, owner: str) -> tu
         if not isinstance(conf, tuple):
             return fallback
         notes = []
-        if memory.enabled():
+        if memory.enabled():  # Lark's own notes only; Mnemos stays out of contact handling
             seen = set()
             for f in memory.core_facts(12) + memory.search_facts(f"{name} {text}", 8):
                 if f["id"] not in seen:

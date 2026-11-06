@@ -74,6 +74,10 @@ def system_prompt(available: list[tools.Tool], sub: bool = False) -> str:
         lines.append("You have a long-term memory shared across all chats. Notes from it come with each conversation. Save things worth keeping "
                      "with remember (people, preferences, projects, plans, corrections) even if the background learner would catch them, "
                      "use memory_search for facts and search_conversations / read_conversation to look back at what was said, use zoom to open the numbered lines of your history for detail, and use forget for wrong or outdated notes.")
+    if "mnemos_capture" in names:
+        lines.append("Your memory is Mnemos. Wherever these instructions say to save something with remember, use mnemos_capture "
+                     "(standing=true for how the user wants you to behave from now on); to fix or drop a note, use mnemos_correct. "
+                     "There is no search over old chats: use mnemos_recall for what you kept.")
     if "notion_search" in names:
         lines.append("You can use the owner's Notion with notion_search, notion_read, notion_query, notion_create_page and notion_update_page; "
                      "never drive Notion through the browser. Search to find an id, read a database before querying it so the property names are right, "

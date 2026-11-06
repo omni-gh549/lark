@@ -112,7 +112,9 @@ def settings() -> dict:
 
 
 def enabled() -> bool:
-    return settings()["use"]
+    """Lark's own memory is on: notes, past-chat search and the learning pass. Off when memory is off or Mnemos is chosen."""
+    s = vault.load()
+    return s["memory_use"] and s["memory_backend"] == "lark"
 
 
 # ---- search text -----------------------------------------------------------------------------------------------
@@ -520,7 +522,12 @@ def _recent_user_text(history: list[dict]) -> str:
 
 async def context(chat_id: str, history: list[dict]) -> str:
     """The memory block for the system prompt, or an empty string when memory is off or empty."""
-    if not enabled() or is_contact_chat(chat_id):
+    if is_contact_chat(chat_id):
+        return ""
+    if vault.load()["memory_backend"] == "mnemos":
+        from . import mnemos
+        return await mnemos.context(chat_id, _recent_user_text(history), mnemos.CURRENT_MODEL.get())
+    if not enabled():
         return ""
     query = _recent_user_text(history)
     qvec = None
@@ -600,7 +607,7 @@ async def learn(chat_id: str, name: str, key: str, model: str) -> None:
     """After a reply: update the chat summary and the facts, in the background. Never raises."""
     try:
         s = settings()
-        if not (s["use"] and s["learn"]) or is_contact_chat(chat_id):
+        if not (enabled() and s["learn"]) or is_contact_chat(chat_id):
             return
         doc = chats.load(chat_id)
         if not doc:
