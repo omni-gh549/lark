@@ -196,6 +196,17 @@ async def delete_key(name: str):
     return view_settings()
 
 
+@app.get("/api/usage")
+async def usage():
+    key = vault.get_key("openrouter")
+    if not key:
+        return err(400, "Add an OpenRouter key in Settings to see usage.")
+    try:
+        return await providers.openrouter_usage(key)
+    except Exception as e:
+        return err(502, str(e) if isinstance(e, RuntimeError) else "Could not reach OpenRouter.")
+
+
 @app.post("/api/keys/{name}/test")
 async def test_key(name: str):
     if name not in KEY_NAMES:

@@ -1,4 +1,7 @@
 <script>
+  import Usage from "./Usage.svelte";
+  import { pageLabel } from "./settingsPages.js";
+  let { page = "model" } = $props();
   import { api } from "./api.js";
   import { app } from "./store.svelte.js";
   import { getBackdrop, setBackdrop, getPalette, setPalette } from "./backdrop.js";
@@ -246,9 +249,10 @@
 {/snippet}
 
 <section class="page">
-  <h1>Settings</h1>
+  <h1>{pageLabel(page)}</h1>
 
   {#if s}
+    {#if page === "model"}
     <div class="group">
       <h2>Model</h2>
       <div class="rows">
@@ -294,7 +298,9 @@
       </div>
     </div>
 
-    {#if s.search_providers}
+    {/if}
+
+    {#if page === "search"}
     <div class="group">
       <h2>Web search</h2>
       <div class="rows">
@@ -314,7 +320,9 @@
         {@render keyRow(s.search, s.search_providers[s.search])}
       </div>
     </div>
+    {/if}
 
+    {#if page === "sandbox"}
     <div class="group">
       <h2>Sandbox</h2>
       <div class="rows">
@@ -351,6 +359,33 @@
             <p class="status {sandboxNote.kind}">{sandboxNote.text}</p>
           {/if}
         </div>
+        {#if s.sandbox}
+          <div class="row">
+            <div class="row-head">
+              <span class="row-title">Keep browser cookies and logins</span>
+              <div class="seg" role="group" aria-label="Keep browser cookies">
+                <button aria-pressed={!s.browser_cookies} onclick={() => setCookies(false)}>Off</button>
+                <button aria-pressed={s.browser_cookies} onclick={() => setCookies(true)}>On</button>
+              </div>
+            </div>
+            <p class="meta" style="margin:0">
+              Saved logins sit in the sandbox, where Lark's commands can read them, and a malicious web page could try to misuse them. Best for low-stakes sites.
+            </p>
+            <div class="row-actions">
+              <button class="btn" onclick={clearBrowser}>Clear browser data</button>
+            </div>
+            <p class="status {browserNote.kind}">{browserNote.text}</p>
+          </div>
+        {/if}
+      </div>
+    </div>
+
+    {/if}
+
+    {#if page === "appearance"}
+    <div class="group">
+      <h2>Appearance</h2>
+      <div class="rows">
         <div class="row">
           <div class="row-head">
             <span class="row-title">Background</span>
@@ -382,30 +417,11 @@
             When a table, plan or checklist is clearer than text, Lark can show it as a small interface in the web chat (OpenUI). Everything else stays plain text, and Telegram always gets text.
           </p>
         </div>
-        {#if s.sandbox}
-          <div class="row">
-            <div class="row-head">
-              <span class="row-title">Keep browser cookies and logins</span>
-              <div class="seg" role="group" aria-label="Keep browser cookies">
-                <button aria-pressed={!s.browser_cookies} onclick={() => setCookies(false)}>Off</button>
-                <button aria-pressed={s.browser_cookies} onclick={() => setCookies(true)}>On</button>
-              </div>
-            </div>
-            <p class="meta" style="margin:0">
-              Saved logins sit in the sandbox, where Lark's commands can read them, and a malicious web page could try to misuse them. Best for low-stakes sites.
-            </p>
-            <div class="row-actions">
-              <button class="btn" onclick={clearBrowser}>Clear browser data</button>
-            </div>
-            <p class="status {browserNote.kind}">{browserNote.text}</p>
-          </div>
-        {/if}
       </div>
     </div>
-
     {/if}
 
-    {#if s.notion}
+    {#if page === "notion" && s.notion}
     <div class="group">
       <h2>Notion</h2>
       <div class="rows">
@@ -421,7 +437,7 @@
     </div>
     {/if}
 
-    {#if s.telegram}
+    {#if page === "telegram" && s.telegram}
     <div class="group">
       <h2>Telegram</h2>
       <div class="rows">
@@ -478,6 +494,7 @@
     </div>
     {/if}
 
+    {#if page === "keys"}
     <div class="group">
       <h2>API keys</h2>
       <div class="rows">
@@ -489,5 +506,10 @@
         Keys are encrypted on the server and never sent back to the browser.
       </p>
     </div>
+    {/if}
+
+    {#if page === "usage"}
+      <Usage />
+    {/if}
   {/if}
 </section>

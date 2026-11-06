@@ -160,3 +160,26 @@ async def _once(name: str, key: str, model: str, messages: list[dict], tools: li
     if calls:
         yield {"tool_calls": [{**c, "id": c["id"] or f"call_{i}"} for i, c in sorted(calls.items())]}
     yield {"done": True}
+
+
+async def openrouter_usage(key: str) -> dict:
+    """Credit balance and recent spend for an OpenRouter key. Raises RuntimeError on a refusal."""
+    h = _headers("openrouter", key)
+    base = PROVIDERS["openrouter"]["base"]
+    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+        kr = await client.get(f"{base}/key", headers=h)
+        cr = await client.get(f"{base}/credits", headers=h)
+    if kr.status_code != 200:
+        raise RuntimeError(_error_text(kr.text, kr.status_code))
+    k = (kr.json() or {}).get("data") or {}
+    out = {
+        "day": k.get("usage_daily"), "week": k.get("usage_weekly"), "month": k.get("usage_monthly"),
+        "key_used": k.get("usage"), "key_limit": k.get("limit"), "key_remaining": k.get("limit_remaining"),
+        "free_tier": k.get("is_free_tier"), "total": None, "used": None, "remaining": None,
+    }
+    if cr.status_code == 200:
+        c = (cr.json() or {}).get("data") or {}
+        if c.get("total_credits") is not None and c.get("total_usage") is not None:
+            out["total"], out["used"] = c["total_credits"], c["total_usage"]
+            out["remaining"] = c["total_credits"] - c["total_usage"]
+    return out

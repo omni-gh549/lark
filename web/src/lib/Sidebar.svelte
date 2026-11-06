@@ -2,9 +2,10 @@
   import { onMount, tick } from "svelte";
   import { api } from "./api.js";
   import { app, loadSettings } from "./store.svelte.js";
+  import { SETTINGS_PAGES } from "./settingsPages.js";
   import { chat, newChat, openChat, deleteChat, refreshList } from "./chat.svelte.js";
 
-  let { route, go, wide = $bindable(), drawer = $bindable(), panelsOpen = $bindable() } = $props();
+  let { route, page, go, wide = $bindable(), drawer = $bindable(), panelsOpen = $bindable() } = $props();
 
   let menuOpen = $state(false);
   let searching = $state(false);
@@ -162,6 +163,14 @@
       </button>
     </nav>
 
+    {#if route === "settings"}
+      <div class="side-label">Settings</div>
+      <nav class="side-nav side-pages" aria-label="Settings pages">
+        {#each SETTINGS_PAGES as p (p.id)}
+          <button aria-current={page === p.id ? "page" : undefined} onclick={() => { go("settings", p.id); leave(); }}>{p.label}</button>
+        {/each}
+      </nav>
+    {:else}
     <button class="side-label link" onclick={() => section("projects")}>Projects</button>
     <p class="side-empty">No projects</p>
 
@@ -181,6 +190,7 @@
         <p class="side-empty">{query ? "No matching chats." : "No saved chats yet."}</p>
       {/each}
     </div>
+    {/if}
   </div>
 
   <div class="side-foot panel-foot phone-only">

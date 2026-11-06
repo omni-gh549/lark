@@ -10,15 +10,18 @@
   import Panels from "./lib/Panels.svelte";
   import Sidebar from "./lib/Sidebar.svelte";
   import Login from "./lib/Login.svelte";
+  import { SETTINGS_PAGES } from "./lib/settingsPages.js";
   import { watchMesh } from "./lib/backdrop.js";
 
   const ROUTES = ["chat", "projects", "memory", "settings", "components"];
-  const fromHash = () => {
-    const h = location.hash.slice(1);
-    return ROUTES.includes(h) ? h : "chat";
+  const parse = () => {
+    const [r, sub] = location.hash.slice(1).split("/");
+    return { route: ROUTES.includes(r) ? r : "chat", page: SETTINGS_PAGES.some((p) => p.id === sub) ? sub : "model" };
   };
+  const fromHash = () => parse().route;
 
   let route = $state(fromHash());
+  let page = $state(parse().page); // which Settings page
   let panelsOpen = $state(false);
   let drawer = $state(false); // the sidebar as a drawer, on phones
   // wide screens: the sidebar is a slim rail that opens into a panel; remembered per browser
@@ -68,14 +71,16 @@
 
   $effect(() => watchMesh(meshEl));
 
-  const go = (r) => {
+  const go = (r, sub) => {
     route = r;
-    if (location.hash.slice(1) !== r) history.replaceState(null, "", r === "chat" ? location.pathname : `#${r}`);
+    if (r === "settings") page = sub ?? page;
+    const h = r === "settings" ? `settings/${page}` : r;
+    if (location.hash.slice(1) !== h) history.replaceState(null, "", r === "chat" ? location.pathname : `#${h}`);
   };
 
   onMount(() => {
     loadSettings();
-    const onhash = () => (route = fromHash());
+    const onhash = () => ((route = fromHash()), (page = parse().page));
     const onkey = (e) => {
       if (e.key === "Escape") panelsOpen = false;
     };
@@ -159,7 +164,7 @@
   <Login />
 {:else}
   <div class="app" class:side-wide={wide}>
-    <Sidebar {route} {go} bind:wide bind:drawer bind:panelsOpen />
+    <Sidebar {route} {page} {go} bind:wide bind:drawer bind:panelsOpen />
     <header class="top">
       <div class="top-left">
         <button class="icon-btn menu-btn" aria-label="Menu" aria-expanded={drawer} onclick={() => (drawer = true)}>
@@ -194,7 +199,7 @@
       {:else if route === "memory"}
         <Memory onopen={async (id) => { await openChat(id); go("chat"); }} />
       {:else if route === "settings"}
-        <Settings />
+        <Settings {page} />
       {:else}
         <Gallery />
       {/if}
