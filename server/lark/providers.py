@@ -1,5 +1,6 @@
 """Chat providers. All speak the OpenAI chat completions protocol."""
 import asyncio
+import contextvars
 import json
 from collections.abc import AsyncIterator
 
@@ -27,11 +28,15 @@ PROVIDERS = {
     },
 }
 
+# the chat a model call belongs to; OpenCode Go uses it to route and cache each conversation
+SESSION: contextvars.ContextVar[str | None] = contextvars.ContextVar("session", default=None)
+
 TIMEOUT = httpx.Timeout(30.0, read=300.0)
 
 
 def _headers(name: str, key: str) -> dict:
-    return {"Authorization": f"Bearer {key}", **PROVIDERS[name]["headers"]}
+    extra = {"x-opencode-session": SESSION.get()} if name == "opencode" and SESSION.get() else {}
+    return {"Authorization": f"Bearer {key}", **PROVIDERS[name]["headers"], **extra}
 
 
 def _error_text(resp_text: str, status: int) -> str:

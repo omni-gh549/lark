@@ -11,7 +11,7 @@ import os
 import tempfile
 import time
 
-from . import agent, chats, health, memory, sandbox, timeline, titles, vault
+from . import agent, chats, health, memory, providers, sandbox, timeline, titles, vault
 
 log = logging.getLogger("lark")
 
@@ -217,6 +217,7 @@ async def resume_all():
 
 
 async def _execute(run: Run, name: str, key: str, model: str, history: list[dict]):
+    providers.SESSION.set(run.chat_id)
     error = None
     memory.CURRENT_CHAT.set(run.chat_id)  # the memory tools record where a note came from
     memory.CURRENT_VIA.set(run.via)
