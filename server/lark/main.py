@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -12,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import agent, auth, chats, files, health, memory, mnemos, notion, providers, runs, stats, sandbox, search, telegram, timeline, titles, tools, vault
+from .swarm import SWARM_MODEL, board as swarm_board, config as swarm_config
 
 KEY_NAMES = set(providers.PROVIDERS) | set(search.SEARCH_PROVIDERS) | {"telegram", "notion"}
 DIST = Path(os.environ.get("LARK_DIST", Path(__file__).resolve().parents[2] / "web" / "dist"))
@@ -125,6 +127,9 @@ def view_settings() -> dict:
         "memory": {"use": s["memory_use"], "backend": s["memory_backend"], "mnemos_command": s["mnemos_command"], "learn": s["memory_learn"], "embedding_model": s["embedding_model"], "memory_model": s["memory_model"], **memory.stats()},
         "title_model": s["title_model"],
         "tiers": vault.active_tiers(s),
+        "swarm": {**swarm_config.clean(s["swarm"]),
+                  "meta": {"labels": swarm_config.LABELS, "limits": {k: [v[1], v[2]] for k, v in swarm_config.NUMBERS.items()},
+                           "roles": [{"id": r, "label": swarm_config.ROLE_LABELS[r]} for r in swarm_config.ROLES]}},
         "auth": bool(auth.password()),
         "sandbox": sandbox.configured(),
         "providers": {
@@ -159,6 +164,7 @@ class SettingsIn(BaseModel):
     memory_model: str | None = Field(default=None, max_length=200)
     title_model: str | None = Field(default=None, max_length=200)
     tiers: dict[str, str] | None = None
+    swarm: dict | None = None
 
 
 @app.put("/api/settings")
@@ -187,7 +193,7 @@ async def put_settings(body: SettingsIn):
         mnemos.forget_briefing()
     vault.update(body.provider, {k: v.strip() for k, v in (body.models or {}).items()}, body.search, body.browser_cookies,
                  body.memory_use, body.memory_learn, body.embedding_model, body.memory_model, body.generative_ui, body.title_model, body.tiers,
-                 body.memory_backend)
+                 body.memory_backend, swarm=body.swarm)
     return view_settings()
 
 
@@ -225,6 +231,23 @@ async def delete_key(name: str):
         return err(404, "Unknown provider.")
     vault.delete_key(name)
     return view_settings()
+
+
+@app.get("/api/swarm/{run}/agents/{agent_id}")
+async def swarm_agent(run: str, agent_id: str):
+    """What one swarm agent was asked, what it found and said: the detail sheet on the swarm card."""
+    if not swarm_board.exists(run) or not re.fullmatch(r"a\d{1,4}", agent_id):
+        return err(404, "No such agent.")
+    b = swarm_board.Board(run)
+    try:
+        row = next((a for a in b.agents() if a["id"] == agent_id), None)
+        if not row:
+            return err(404, "No such agent.")
+        entries = [e for e in b.find(limit=500) if e["author"] == agent_id][-40:]
+        msgs = [dict(r) for r in b.db.execute('select ts, frm, "to", kind, text from messages where frm=? or "to"=? order by id desc limit 30', (agent_id, agent_id))]
+        return {"agent": row, "entries": [{k: e[k] for k in ("id", "kind", "text", "status", "data")} for e in entries], "messages": list(reversed(msgs))}
+    finally:
+        b.close()
 
 
 @app.get("/api/usage")
@@ -435,9 +458,10 @@ def sse(obj: dict) -> str:
     return f"data: {json.dumps(obj)}\n\n"
 
 
-def ready(chat_id: str | None = None):
+def ready(chat_id: str | None = None, swarm: bool = False):
     """The provider settings a chat needs: (name, key, model), or an error response.
-    A chat that has its own model (picked on the slider while it was open) keeps using it."""
+    A chat that has its own model (picked on the slider while it was open) keeps using it.
+    The model is the Agent Swarm sentinel when the chat is on that stop of the slider (or `swarm` asks for it)."""
     s = vault.load()
     name = s["provider"]
     label = providers.PROVIDERS[name]["label"]
@@ -446,6 +470,8 @@ def ready(chat_id: str | None = None):
     doc = chats.load(chat_id) if chat_id and chats.valid(chat_id) else None
     if doc and doc.get("model") and doc.get("provider") == name:
         model = doc["model"]
+    if swarm:
+        model = SWARM_MODEL
     if not key:
         return err(400, f"No {label} key yet. Add one in Settings.")
     if not model:
@@ -503,6 +529,7 @@ async def put_chat(chat_id: str, body: SavedChat):
 
 
 class SendIn(BaseModel):
+    model: str | None = Field(default=None, max_length=20)  # "swarm" when a new chat was started on the Agent Swarm stop
     content: str = Field(default="", max_length=100_000)
     images: list[str] = Field(default=[], max_length=8)  # file names from /api/uploads
 
@@ -533,7 +560,7 @@ runs.history_builder = model_history
 async def send_to_chat(chat_id: str, body: SendIn):
     if not chats.valid(chat_id):
         return err(400, "Bad chat id.")
-    conf = ready(chat_id)
+    conf = ready(chat_id, swarm=body.model == SWARM_MODEL)
     if isinstance(conf, JSONResponse):
         return conf
     images = [n for n in body.images if files.path(n)]
@@ -564,7 +591,7 @@ class ChatModelIn(BaseModel):
 
 @app.put("/api/chats/{chat_id}/model")
 async def put_chat_model(chat_id: str, body: ChatModelIn):
-    if not chats.valid(chat_id) or not chats.set_model(chat_id, vault.load()["provider"], body.model.strip()):
+    if not chats.valid(chat_id) or not chats.set_model(chat_id, vault.load()["provider"], body.model.strip()[:200]):
         return err(404, "No such chat.")
     return {"ok": True}
 

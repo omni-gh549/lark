@@ -83,6 +83,7 @@ def load() -> dict:
         "embedding_model": str(data.get("embedding_model", DEFAULTS["embedding_model"])),
         "tiers": {k: str(v).strip() for k, v in (data.get("tiers") or {}).items() if k in TIERS},
         "tiers_opencode": {k: str(v).strip() for k, v in (data.get("tiers_opencode") or {}).items() if k in TIERS},
+        "swarm": data.get("swarm") if isinstance(data.get("swarm"), dict) else {},  # cleaned and defaulted in swarm/config.py
         "keys": data.get("keys", {}),
     }
 
@@ -104,8 +105,11 @@ def _save(data: dict):
     os.replace(tmp, SETTINGS)
 
 
-def update(provider=None, models=None, search=None, browser_cookies=None, memory_use=None, memory_learn=None, embedding_model=None, memory_model=None, generative_ui=None, title_model=None, tiers=None, memory_backend=None, mnemos_command=None):
+def update(provider=None, models=None, search=None, browser_cookies=None, memory_use=None, memory_learn=None, embedding_model=None, memory_model=None, generative_ui=None, title_model=None, tiers=None, memory_backend=None, mnemos_command=None, swarm=None):
     data = load()
+    if swarm is not None:
+        from .swarm import config as swarm_config  # late: that module imports this one
+        data["swarm"] = swarm_config.merge(data.get("swarm"), swarm)
     if tiers is not None:
         key = "tiers_opencode" if data["provider"] == "opencode" else "tiers"
         data[key] = {k: v.strip()[:200] for k, v in tiers.items() if k in TIERS and v.strip()}

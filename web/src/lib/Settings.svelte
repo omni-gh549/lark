@@ -1,5 +1,6 @@
 <script>
   import Usage from "./Usage.svelte";
+  import SwarmSettings from "./SwarmSettings.svelte";
   import { pageLabel } from "./settingsPages.js";
   let { page = "model" } = $props();
   import { api } from "./api.js";
@@ -317,6 +318,10 @@
       </div>
     </div>
 
+    {/if}
+
+    {#if page === "swarm"}
+      <SwarmSettings />
     {/if}
 
     {#if page === "search"}

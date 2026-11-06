@@ -26,7 +26,12 @@ export async function refreshList() {
 
 // older assistant messages had no parts
 const upgrade = (messages) =>
-  messages.map((m) => (m.role === "assistant" && !m.parts ? { ...m, parts: [{ type: "text", text: m.content }] } : m));
+  messages.map((m) => {
+    if (m.role !== "assistant") return m;
+    if (!m.parts) return { ...m, parts: [{ type: "text", text: m.content }] };
+    // a saved swarm card has no live fields (message pulses, when the last update arrived): give it the same shape as a live one
+    return { ...m, parts: m.parts.map((p) => (p.type === "swarm" ? { pulses: [], at: Date.now(), shots: [], ...p } : p)) };
+  });
 
 export async function init() {
   if (chat.ready) return;
@@ -76,9 +81,69 @@ function addText(reply, text) {
 
 function finishTools(reply) {
   for (const p of reply.parts) if (p.type === "tool" && p.state === "running") p.state = "error";
+  finishSwarm(reply);
+}
+
+// ---- Agent Swarm: the stream's swarm_* and agent_* events build one card in place ----
+function swarmCard(reply) {
+  let p = reply.parts.find((x) => x.type === "swarm");
+  if (!p) {
+    p = { type: "swarm", run: null, phase: 0, done: false, agents: [], stats: {}, msgs: 0, shots: [], pulses: [], at: Date.now() };
+    reply.parts.unshift(p);
+  }
+  return p;
+}
+
+function applySwarm(reply, e) {
+  if (e.swarm_start) {
+    const p = swarmCard(reply);
+    p.run = e.swarm_start.run;
+  } else if (e.swarm_phase) swarmCard(reply).phase = e.swarm_phase.i;
+  else if (e.agent_spawn) {
+    const p = swarmCard(reply);
+    const a = { ...e.agent_spawn, state: "wait", activity: "" };
+    const i = p.agents.findIndex((x) => x.id === a.id);
+    if (i >= 0) p.agents[i] = a;
+    else p.agents.push(a);
+  } else if (e.agent_state) {
+    const a = swarmCard(reply).agents.find((x) => x.id === e.agent_state.id);
+    if (a) Object.assign(a, { state: e.agent_state.state, activity: e.agent_state.activity ?? "" }, e.agent_state.error ? { error: e.agent_state.error } : {});
+  } else if (e.agent_msg) {
+    const p = swarmCard(reply);
+    p.msgs++;
+    p.pulses.push({ from: e.agent_msg.from, to: e.agent_msg.to, t: performance.now() });
+    if (p.pulses.length > 60) p.pulses.splice(0, p.pulses.length - 60);
+  } else if (e.agent_shot) {
+    const p = swarmCard(reply);
+    p.shots.push(e.agent_shot);
+    if (p.shots.length > 12) p.shots.shift();
+  } else if (e.swarm_stats) {
+    const p = swarmCard(reply);
+    p.stats = e.swarm_stats;
+    p.at = Date.now();
+  } else if (e.swarm_end) {
+    const p = swarmCard(reply);
+    if (e.swarm_end.trivial) reply.parts.splice(reply.parts.indexOf(p), 1); // answered directly: no card
+    else {
+      p.stats = { ...p.stats, ...e.swarm_end };
+      p.phase = 4;
+      finishSwarm(reply, true);
+    }
+  }
+}
+
+// when the reply ends (finished, stopped or failed) nothing on the card is still working
+function finishSwarm(reply, ended = false) {
+  const p = reply.parts.find((x) => x.type === "swarm");
+  if (!p) return;
+  p.done = true;
+  p.pulses = [];
+  for (const a of p.agents) if (a.state === "wait" || a.state === "work") Object.assign(a, { state: "failed", activity: "" });
+  if (!ended) p.stats = { ...p.stats, answered: p.stats.answered ?? false };
 }
 
 function apply(reply, event) {
+  for (const k in event) if (k.startsWith("swarm_") || k.startsWith("agent_")) return applySwarm(reply, event);
   if (event.steer) {
     // a message sent mid-run that the model has now taken: show it here, where it landed, not at the bottom
     const i = chat.messages.findLastIndex((m) => m.role === "user" && m.content === event.steer.content);
@@ -157,7 +222,7 @@ async function attach(id, messages) {
   controller = null;
   watching = false;
   chat.busy = false;
-  if (!failed && reply.parts.some((p) => p.type === "tool")) {
+  if (!failed && reply.parts.some((p) => p.type === "tool" || p.type === "swarm")) {
     // the server timed the reply when it saved it; ask for that so the page and a reload agree
     api(`/api/chats/${id}`).then(
       (doc) => (reply.worked = doc.messages?.findLast((m) => m.role === "assistant")?.worked),
@@ -218,7 +283,7 @@ export async function stop() {
 async function post(id, body) {
   for (let i = 0; ; i++) {
     try {
-      return await api(`/api/chats/${id}/send`, { method: "POST", body });
+      return await api(`/api/chats/${id}/send`, { method: "POST", body: chat.model === "swarm" ? { ...body, model: "swarm" } : body });
     } catch (e) {
       if (i >= 4 || (e.status && e.status < 502)) throw e;
       await sleep(1500 * (i + 1));
@@ -245,7 +310,7 @@ export async function send(text, images = []) {
     chat.messages.push({ role: "assistant", content: e.message, error: true });
     return;
   }
-  chat.model = app.settings?.models?.[app.settings.provider] || chat.model; // the server pinned this chat to it
+  if (chat.model !== "swarm") chat.model = app.settings?.models?.[app.settings.provider] || chat.model; // the server pinned this chat to it
   refreshList();
   if (!queued) await attach(id, chat.messages);
 }

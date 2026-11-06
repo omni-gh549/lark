@@ -12,6 +12,7 @@ import tempfile
 import time
 
 from . import agent, chats, health, memory, mnemos, providers, sandbox, timeline, titles, vault
+from .swarm import SWARM_MODEL, config as swarm_config, conductor as swarm_conductor, events as swarm_events
 
 log = logging.getLogger("lark")
 
@@ -39,12 +40,15 @@ class Run:
         self.skip = 0  # events that were replayed from before a restart (followers must not repeat them)
         self.attempts = 0
         self.steer: list[dict] = []  # messages sent mid-run, waiting for the next step
+        self.swarm_run: str | None = None  # the Agent Swarm run this reply is, so a restart can pick its blackboard back up
         self.via = "web"  # where the latest message in this run came from ("web" or "telegram"): the reply goes back there
         self._journaled = 0.0
 
     def push(self, ev: dict):
         # append only: a client may already have read earlier events, so they must never change
         self.events.append(ev)
+        if "swarm_start" in ev:
+            self.swarm_run = ev["swarm_start"]["run"]
         if "tool_end" in ev or time.time() - self._journaled > 3:
             _journal(self)
         self.wake()
@@ -98,6 +102,7 @@ def running_ids() -> set[str]:
 def assistant_message(events: list[dict]) -> dict | None:
     """Folds a run's events into the stored message shape, or None if the run produced nothing."""
     content, parts = "", []
+    card = swarm_events.fold(events)
     for ev in events:
         if "text" in ev:
             content += ev["text"]
@@ -117,7 +122,9 @@ def assistant_message(events: list[dict]) -> dict | None:
     for p in parts:
         if p["type"] == "tool" and p["state"] == "running":
             p["state"] = "error"
-    if not content and not any(p["type"] == "tool" for p in parts):
+    if card:
+        parts.insert(0, card)  # the Agent Swarm card sits above the answer
+    if not content and not card and not any(p["type"] == "tool" for p in parts):
         return None
     return {"role": "assistant", "content": content, "parts": parts}
 
@@ -149,7 +156,7 @@ def _dir():
 def _journal(run: "Run"):
     run._journaled = time.time()
     try:
-        data = json.dumps({"chat_id": run.chat_id, "attempts": run.attempts, "events": run.events[-400:]})
+        data = json.dumps({"chat_id": run.chat_id, "attempts": run.attempts, "swarm": run.swarm_run, "events": run.events[-400:]})
         fd, tmp = tempfile.mkstemp(dir=_dir(), suffix=".tmp")
         with os.fdopen(fd, "w") as f:
             f.write(data)
@@ -208,21 +215,24 @@ async def resume_all():
                 asyncio.ensure_future(RELAYS[chat_id](run))
             continue
         history = history_builder(doc["messages"])
-        partial = assistant_message(events)
+        swarm_run = data.get("swarm") if isinstance(data.get("swarm"), str) else None
+        partial = None if conf[2] == SWARM_MODEL else assistant_message(events)  # a swarm picks up from its blackboard, not from a transcript
         if partial:
             if partial["content"]:
                 history.append({"role": "assistant", "content": partial["content"]})
             history.append({"role": "user", "content": f"{RESTART_NOTE}\n{_summary(events)}".strip()})
         health.record("run", "resuming a reply after a restart")
-        start(chat_id, *conf, history, attempts=attempts + 1, prior=events)
+        start(chat_id, *conf, history, attempts=attempts + 1, prior=events, swarm_run=swarm_run)
 
 
 async def _execute(run: Run, name: str, key: str, model: str, history: list[dict]):
     providers.SESSION.set(run.chat_id)
     error = None
+    swarm = model == SWARM_MODEL
+    real = swarm_config.model_for("finisher")[0] if swarm else model  # titles, memory and the rest need a real model name
     memory.CURRENT_CHAT.set(run.chat_id)  # the memory tools record where a note came from
     memory.CURRENT_VIA.set(run.via)
-    mnemos.CURRENT_MODEL.set(model)  # Mnemos signs what the model writes with its id
+    mnemos.CURRENT_MODEL.set(real)  # Mnemos signs what the model writes with its id
     try:
         try:
             notes = await memory.context(run.chat_id, history)
@@ -234,11 +244,15 @@ async def _execute(run: Run, name: str, key: str, model: str, history: list[dict
                 notes = f"{telegram.owner_brief()}\n\n{notes}".strip()
             except Exception:
                 pass  # a problem with contacts must never stop a reply
-        if run.chat_id == "telegram-owner" and run.via == "telegram":
-            notes = f"{agent.TELEGRAM_PROMPT}\n\n{notes}".strip()
-        elif not memory.is_contact_chat(run.chat_id) and vault.load()["generative_ui"]:
-            notes = f"{notes}\n\n{agent.ui_prompt()}".strip()  # the web chat can draw tables, plans and checklists
-        async for ev in agent.run(name, key, model, history, notes, steer=lambda: _take_steer(run)):
+        if swarm:
+            stream = swarm_conductor.run(name, key, model, history, notes, steer=lambda: _take_steer(run), chat_id=run.chat_id, resume=run.swarm_run)
+        else:
+            if run.chat_id == "telegram-owner" and run.via == "telegram":
+                notes = f"{agent.TELEGRAM_PROMPT}\n\n{notes}".strip()
+            elif not memory.is_contact_chat(run.chat_id) and vault.load()["generative_ui"]:
+                notes = f"{notes}\n\n{agent.ui_prompt()}".strip()  # the web chat can draw tables, plans and checklists
+            stream = agent.run(name, key, model, history, notes, steer=lambda: _take_steer(run))
+        async for ev in stream:
             if "error" in ev:
                 error = ev["error"]
             run.push(ev)
@@ -267,7 +281,7 @@ async def _execute(run: Run, name: str, key: str, model: str, history: list[dict
             if not run.discard:
                 doc = chats.load(run.chat_id) or {"messages": []}
                 msgs = saved_messages(run.events)
-                if msgs and msgs[-1].get("role") == "assistant" and any(p.get("type") == "tool" for p in msgs[-1].get("parts", [])):
+                if msgs and msgs[-1].get("role") == "assistant" and any(p.get("type") in ("tool", "swarm") for p in msgs[-1].get("parts", [])):
                     msgs[-1]["worked"] = max(1, int(time.time() - run.started))  # seconds, for "Worked for 1m 20s"
                 messages = doc["messages"]
                 if any(m.get("role") == "assistant" for m in msgs):
@@ -286,9 +300,9 @@ async def _execute(run: Run, name: str, key: str, model: str, history: list[dict
                     health.record("run", "chat too large to save")
                     chats.save(run.chat_id, messages[-60:], error=error)
                 if not error and not any("stopped" in e for e in run.events):
-                    asyncio.ensure_future(titles.name_chat(run.chat_id, name, key, model))
-                    asyncio.ensure_future(memory.learn(run.chat_id, name, key, model))
-                    asyncio.ensure_future(timeline.update(run.chat_id, name, key, model))
+                    asyncio.ensure_future(titles.name_chat(run.chat_id, name, key, real))
+                    asyncio.ensure_future(memory.learn(run.chat_id, name, key, real))
+                    asyncio.ensure_future(timeline.update(run.chat_id, name, key, real))
                 if run.queued and not run.user_stop and history_builder:
                     follow = history_builder(messages)
         except Exception as e:
@@ -304,9 +318,10 @@ async def _execute(run: Run, name: str, key: str, model: str, history: list[dict
             run.wake()
 
 
-def start(chat_id: str, name: str, key: str, model: str, history: list[dict], attempts: int = 0, prior: list[dict] | None = None) -> Run:
+def start(chat_id: str, name: str, key: str, model: str, history: list[dict], attempts: int = 0, prior: list[dict] | None = None, swarm_run: str | None = None) -> Run:
     run = Run(chat_id)
     run.conf = (name, key, model)
+    run.swarm_run = swarm_run
     run.attempts = attempts
     run.via = surface(chat_id)
     if prior:

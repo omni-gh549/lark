@@ -1,5 +1,6 @@
 export const SETTINGS_PAGES = [
   { id: "model", label: "Model" },
+  { id: "swarm", label: "Agent Swarm" },
   { id: "keys", label: "API keys" },
   { id: "usage", label: "Usage" },
   { id: "search", label: "Web search" },

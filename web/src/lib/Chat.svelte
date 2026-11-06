@@ -6,6 +6,7 @@
   import Block from "../openui/Block.svelte";
   import ToolStatus from "./ToolStatus.svelte";
   import ToolChip from "./ToolChip.svelte";
+  import SwarmActivity from "./SwarmActivity.svelte";
   import BrowserWindow from "./BrowserWindow.svelte";
   import ModelDial from "./ModelDial.svelte";
   import { uploadImage } from "./upload.js";
@@ -212,6 +213,8 @@
                   <div class="msg md">{@html render(s.text)}</div>
                 {/if}
               {/each}
+            {:else if p.type === "swarm"}
+              <SwarmActivity part={p} {live} />
             {:else if p.type === "steer"}
               <div class="msg me steer">
                 {#if p.images?.length}
@@ -229,7 +232,7 @@
           {#if live && m.parts?.some((p) => p.type === "tool" && (p.name === "browser" || p.name === "request_login"))}
             <BrowserWindow url={browserUrl(m.parts)} />
           {/if}
-          {#if live && lastPart?.type !== "text"}
+          {#if live && lastPart?.type !== "text" && !(m.parts ?? []).some((p) => p.type === "swarm" && !p.done)}
             <ToolStatus tool={active.length ? { ...active[0], detail: active.length > 1 ? `${active[0].detail} +${active.length - 1} more` : active[0].detail } : null} />
           {/if}
         </div>

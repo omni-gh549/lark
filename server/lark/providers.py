@@ -35,6 +35,10 @@ SESSION: contextvars.ContextVar[str | None] = contextvars.ContextVar("session", 
 
 TIMEOUT = httpx.Timeout(30.0, read=300.0)
 
+# Set only inside a swarm run (each agent task gets its own copy of the context):
+GATE: contextvars.ContextVar = contextvars.ContextVar("gate", default=None)  # an async context manager that limits model calls running at once
+USAGE: contextvars.ContextVar = contextvars.ContextVar("usage", default=None)  # fn(provider, model, usage|None, chars_in, chars_out) after each call
+
 
 def _headers(name: str, key: str) -> dict:
     extra = {"x-opencode-session": SESSION.get()} if name == "opencode" and SESSION.get() else {}
@@ -99,7 +103,19 @@ def friendly(status: int | None, detail: str = "") -> str:
 
 async def stream_round(name: str, key: str, model: str, messages: list[dict], tools: list[dict] | None = None, extra: dict | None = None) -> AsyncIterator[dict]:
     """One model call. Yields {"text"} chunks, then {"tool_calls": [...]} if the model asked for tools,
-    then {"done": True}; or {"error": str}. Transient failures before any output are retried quietly."""
+    then {"done": True}; or {"error": str}. Transient failures before any output are retried quietly.
+    Inside a swarm run the call waits its turn at the gate, so a hundred agents don't mean a hundred requests at once."""
+    gate = GATE.get()
+    if gate is None:
+        async for ev in _stream_round(name, key, model, messages, tools, extra):
+            yield ev
+        return
+    async with gate:
+        async for ev in _stream_round(name, key, model, messages, tools, extra):
+            yield ev
+
+
+async def _stream_round(name: str, key: str, model: str, messages: list[dict], tools: list[dict] | None = None, extra: dict | None = None) -> AsyncIterator[dict]:
     last = {"error": friendly(None)}
     for attempt in range(RETRIES):
         spoke = False
@@ -123,8 +139,12 @@ async def _once(name: str, key: str, model: str, messages: list[dict], tools: li
     body = {"model": model, "messages": messages, "stream": True, **(extra or {})}
     if tools:
         body["tools"] = tools
+    sink = USAGE.get()
+    if sink and name == "openrouter":
+        body.setdefault("usage", {"include": True})  # OpenRouter then reports what the call cost
     calls: dict[int, dict] = {}
     used = None
+    written = 0
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
             async with client.stream(
@@ -164,6 +184,7 @@ async def _once(name: str, key: str, model: str, messages: list[dict], tools: li
                     for choice in obj.get("choices", []):
                         delta = choice.get("delta") or {}
                         if delta.get("content"):
+                            written += len(delta["content"])
                             yield {"text": delta["content"]}
                         for tc in delta.get("tool_calls") or []:
                             i = tc.get("index", 0)
@@ -174,10 +195,17 @@ async def _once(name: str, key: str, model: str, messages: list[dict], tools: li
                             if fn.get("name") and not call["name"]:
                                 call["name"] = fn["name"]
                             call["arguments"] += fn.get("arguments") or ""
+                            written += len(fn.get("arguments") or "")
     except httpx.HTTPError as e:
         yield {"error": friendly(None), "transient": True}
         return
     stats.record(name, model, used)
+    if sink:
+        try:
+            # tokens when the provider says; otherwise a character count the budget can estimate from
+            sink(name, model, used, 0 if isinstance(used, dict) and used.get("prompt_tokens") else len(json.dumps(messages, default=str)), written)
+        except Exception:
+            pass  # accounting must never break a call
     if calls:
         yield {"tool_calls": [{**c, "id": c["id"] or f"call_{i}"} for i, c in sorted(calls.items())]}
     yield {"done": True}
