@@ -207,6 +207,17 @@ async def usage():
         return err(502, str(e) if isinstance(e, RuntimeError) else "Could not reach OpenRouter.")
 
 
+@app.get("/api/usage/opencode")
+async def usage_opencode():
+    key = vault.get_key("opencode")
+    if not key:
+        return err(400, "Add an OpenCode Go key in Settings to see usage.")
+    try:
+        return await providers.opencode_usage(key)
+    except Exception as e:
+        return err(502, str(e) if isinstance(e, RuntimeError) else "Could not reach OpenCode.")
+
+
 @app.post("/api/keys/{name}/test")
 async def test_key(name: str):
     if name not in KEY_NAMES:

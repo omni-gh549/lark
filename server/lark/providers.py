@@ -198,3 +198,34 @@ async def openrouter_usage(key: str) -> dict:
             out["total"], out["used"] = c["total_credits"], c["total_usage"]
             out["remaining"] = c["total_credits"] - c["total_usage"]
     return out
+
+
+OPENCODE_USAGE = "https://opencode.ai/zen/go/v1/usage"
+WINDOWS = (("rolling", "Last 5 hours"), ("weekly", "This week"), ("monthly", "This month"))
+
+
+async def opencode_usage(key: str) -> dict:
+    """How much of each OpenCode Go allowance is used: {"windows": [{"id", "label", "percent", "resets_at"|"resets_in"}]}.
+    The endpoint isn't documented by OpenCode, so read what it gives defensively."""
+    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+        r = await client.get(OPENCODE_USAGE, headers=_headers("opencode", key))
+    if r.status_code != 200:
+        raise RuntimeError(_error_text(r.text, r.status_code))
+    try:
+        data = r.json()
+    except ValueError:
+        data = {}
+    data = data.get("data", data) if isinstance(data, dict) else {}
+    out = []
+    for wid, label in WINDOWS:
+        w = data.get(wid)
+        if not isinstance(w, dict):
+            continue
+        pct = w.get("percent", w.get("usagePercent"))
+        if not isinstance(pct, (int, float)):
+            continue
+        out.append({"id": wid, "label": label, "percent": max(0, min(100, pct)),
+                    "resets_at": w.get("resetsAt"), "resets_in": w.get("resetInSec")})
+    if not out:
+        raise RuntimeError("OpenCode didn't return usage in a form Lark understands.")
+    return {"windows": out}
