@@ -35,8 +35,9 @@ def _public(ip: str) -> bool:
                 or (isinstance(a, ipaddress.IPv4Address) and a in ipaddress.ip_network("100.64.0.0/10")))
 
 
-async def check_url(url: str) -> str:
-    """Raises FetchError unless the URL is http(s) and every address its host resolves to is public."""
+async def check_url(url: str) -> tuple[str, str, str]:
+    """(url, host, ip). Raises FetchError unless the URL is http(s) and every address its host resolves to is public.
+    The request then goes to that very address, so a name that resolves differently a moment later can't slip past."""
     parts = urlsplit(url.strip())
     if parts.scheme not in ("http", "https") or not parts.hostname:
         raise FetchError("Only http and https addresses can be opened.")
@@ -47,7 +48,13 @@ async def check_url(url: str) -> str:
         raise FetchError(f"Couldn't find {host}.")
     if not infos or not all(_public(i[4][0]) for i in infos):
         raise FetchError("That address is on a private network, so it can't be opened.")
-    return parts.geturl()
+    return parts.geturl(), host, infos[0][4][0]
+
+
+def _pinned(url: str, ip: str) -> str:
+    parts = urlsplit(url)
+    netloc = f"[{ip}]" if ":" in ip else ip
+    return parts._replace(netloc=f"{netloc}:{parts.port}" if parts.port else netloc).geturl()
 
 
 SKIP = {"script", "style", "noscript", "template", "svg", "iframe", "canvas", "head", "nav", "footer", "aside", "form", "button", "select", "dialog"}
@@ -119,9 +126,10 @@ async def fetch(url: str, start: int = 0) -> str:
     seen = 0
     async with httpx.AsyncClient(timeout=TIMEOUT, headers=HEADERS, follow_redirects=False) as client:
         while True:
-            url = await check_url(url)
+            url, host, ip = await check_url(url)
             try:
-                async with client.stream("GET", url) as r:
+                host_header = urlsplit(url).netloc.rsplit("@", 1)[-1]
+                async with client.stream("GET", _pinned(url, ip), headers={"Host": host_header}, extensions={"sni_hostname": host}) as r:
                     if r.status_code in (301, 302, 303, 307, 308) and r.headers.get("location"):
                         seen += 1
                         if seen > MAX_REDIRECTS:

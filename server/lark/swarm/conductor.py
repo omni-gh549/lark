@@ -336,6 +336,7 @@ async def _research(hive: Hive, squads: list[dict], scout_notes: str):
             health.record("swarm", f"could not start a squad: {type(e).__name__}")
     hive.set_state(hive.root, "work", "Squads at work")
     await hive.wait(leads)
+    await hive.drain()
     for ld in leads:
         text = ld.result.strip()
         if ld.state != "done" or not text:

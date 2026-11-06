@@ -288,6 +288,8 @@ class Hive:
     def set_state(self, a: Agent, state: str, activity: str | None = None, error: str = "", persist: bool = True):
         changed = state != a.state or (activity is not None and activity != a.activity)
         a.state = state
+        if state == "work":
+            a.last = time.time()  # coming back from the queue is progress: the stall clock starts again
         if activity is not None:
             a.activity = activity
         if state in ("done", "failed"):
@@ -664,3 +666,19 @@ class Hive:
     async def wait(self, agents: list[Agent]):
         for a in agents:
             await a.done.wait()
+
+    async def drain(self, grace: float = 120):
+        """After the leads have reported: let any worker still running finish (a lead may answer before collecting everyone), then cut off stragglers."""
+        end = time.time() + grace
+        while True:
+            live = [a for a in self.agents.values() if a.id != "a0" and a.live and a.kind in WORK_KINDS + ("lead",)]
+            if not live:
+                return
+            if time.time() > end or self.level() == "stop":
+                for a in live:
+                    a.error = a.error or "Cut off when the squad finished."
+                    if a.task_obj and not a.task_obj.done():
+                        a.task_obj.cancel()
+                await asyncio.sleep(0.1)
+                return
+            await asyncio.sleep(1)
