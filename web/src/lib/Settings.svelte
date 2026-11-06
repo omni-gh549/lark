@@ -40,6 +40,12 @@
     app.settings = await api("/api/settings", { method: "PUT", body: { models: { [name]: value } } });
   }
 
+  async function saveTier(id, value) {
+    const v = value.trim();
+    if (!v || v === s.tiers[id]) return;
+    app.settings = await api("/api/settings", { method: "PUT", body: { tiers: { ...s.tiers, [id]: v } } });
+  }
+
   const saveKey = (name) =>
     run(name, async () => {
       app.settings = await api(`/api/keys/${name}`, { method: "PUT", body: { key: keyInput[name] } });
@@ -285,6 +291,19 @@
           </datalist>
           <p class="status {modelNote[s.provider]?.kind ?? ''}">{modelNote[s.provider]?.text ?? ""}</p>
         </div>
+        {#if Object.keys(s.tiers ?? {}).length}
+        <div class="row">
+          <span class="row-title">Model slider</span>
+          <p class="meta" style="margin:0">The three stops on the model slider in the chat box.</p>
+          {#each [["cheap", "Cheap"], ["balanced", "Balanced"], ["smart", "Smart"]] as [id, label]}
+            <div class="field">
+              <label class="meta stop-label" for="tier-{id}">{label}</label>
+              <input id="tier-{id}" list="model-list" value={s.tiers[id] ?? ""} placeholder="model name" autocomplete="off" spellcheck="false"
+                onchange={(e) => saveTier(id, e.currentTarget.value).catch((err) => sayModel(s.provider, err.message, "bad"))} />
+            </div>
+          {/each}
+        </div>
+        {/if}
         <div class="row">
           <label class="row-title" for="tmodel">Chat titles model (optional)</label>
           <div class="field">
