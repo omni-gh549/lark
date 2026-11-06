@@ -89,6 +89,9 @@ def _child_env() -> dict:
         "MNEMOS_SHARED_MEMORY": "off",  # nothing here is shared with other agents on the machine
         "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8", "NO_COLOR": "1",
     })
+    hf = os.environ.get("LARK_MNEMOS_MODELS") or "/opt/mnemos/hf"
+    if "HF_HOME" not in env and os.path.isdir(hf):
+        env.update({"HF_HOME": hf, "HF_HUB_OFFLINE": "1"})  # the embedding model deploy/install-mnemos.sh downloaded; no network at run time
     return env
 
 
