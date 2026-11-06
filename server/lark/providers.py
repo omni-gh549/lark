@@ -1,4 +1,4 @@
-"""Chat providers. Both speak the OpenAI chat completions protocol."""
+"""Chat providers. All speak the OpenAI chat completions protocol."""
 import asyncio
 import json
 from collections.abc import AsyncIterator
@@ -17,6 +17,13 @@ PROVIDERS = {
         "base": "https://ai-gateway.vercel.sh/v1",
         "keys_url": "https://vercel.com/~/ai-gateway/api-keys",
         "headers": {},
+    },
+    "opencode": {
+        "label": "OpenCode Go",
+        "base": "https://opencode.ai/inference/go/openai/v1",
+        "keys_url": "https://opencode.ai/auth",
+        # Go asks clients to identify themselves honestly rather than use a generic HTTP library name
+        "headers": {"User-Agent": "lark/1.0 (+https://github.com/omni-gh549/lark)"},
     },
 }
 
@@ -44,7 +51,10 @@ async def list_models(name: str, key: str | None) -> list[str]:
         r = await client.get(f"{PROVIDERS[name]['base']}/models", headers=headers)
     if r.status_code != 200:
         raise RuntimeError(_error_text(r.text, r.status_code))
-    return sorted(m["id"] for m in r.json().get("data", []))
+    data = r.json().get("data", [])
+    if name == "opencode":  # Go also lists models that only speak other APIs (Anthropic, Responses); Lark speaks chat completions
+        data = [m for m in data if (m.get("api") or {}).get("chat-completions")]
+    return sorted(m["id"] for m in data)
 
 
 async def check_key(name: str, key: str) -> str:

@@ -123,7 +123,7 @@ def view_settings() -> dict:
         "generative_ui": s["generative_ui"],
         "memory": {"use": s["memory_use"], "learn": s["memory_learn"], "embedding_model": s["embedding_model"], "memory_model": s["memory_model"], **memory.stats()},
         "title_model": s["title_model"],
-        "tiers": s["tiers"],
+        "tiers": vault.active_tiers(s),
         "auth": bool(auth.password()),
         "sandbox": sandbox.configured(),
         "providers": {

@@ -12,7 +12,7 @@ MASTER = DATA_DIR / "secret.key"
 
 DEFAULTS = {
     "provider": "openrouter",
-    "models": {"openrouter": "deepseek/deepseek-v4.1-flash", "gateway": ""},
+    "models": {"openrouter": "deepseek/deepseek-v4.1-flash", "gateway": "", "opencode": ""},
     "search": "brave",
     "browser_cookies": False,  # keep the sandbox browser's cookies and logins between sessions
     "memory_use": True,  # remember across chats: the notes in the prompt and the memory tools
@@ -50,6 +50,8 @@ TIERS = ("cheap", "balanced", "smart")  # the composer slider: three models, fro
 
 # Picked on the Pareto frontier of Artificial Analysis Intelligence Index vs OpenRouter price (2026-10-10).
 DEFAULT_TIERS = {"cheap": "xiaomi/mimo-v2.6-flash", "balanced": "xiaomi/mimo-v2.6-pro", "smart": "openai/gpt-6.1-sol"}
+# Slider stops for providers other than OpenRouter (the saved ones live in settings.json as tiers_<provider>).
+PROVIDER_TIERS = {"opencode": {"cheap": "mimo-v2.6-flash", "balanced": "mimo-v2.6-pro", "smart": "kimi-k3.1-pro"}}
 # Earlier defaults: a saved copy of these was never chosen by the user, so it follows the current defaults.
 OLD_DEFAULT_TIERS = [{"cheap": "qwen/qwen3.7-flash", "balanced": "deepseek/deepseek-v4.1-flash", "smart": "deepseek/deepseek-v4-pro"}]
 
@@ -76,8 +78,17 @@ def load() -> dict:
         "title_model": str(data.get("title_model", DEFAULTS["title_model"])),
         "embedding_model": str(data.get("embedding_model", DEFAULTS["embedding_model"])),
         "tiers": {k: str(v).strip() for k, v in (data.get("tiers") or {}).items() if k in TIERS},
+        "tiers_opencode": {k: str(v).strip() for k, v in (data.get("tiers_opencode") or {}).items() if k in TIERS},
         "keys": data.get("keys", {}),
     }
+
+
+def active_tiers(s: dict) -> dict:
+    """The model slider's stops for the chosen provider."""
+    p = s["provider"]
+    if p == "opencode":
+        return {**PROVIDER_TIERS["opencode"], **s["tiers_opencode"]}
+    return s["tiers"]
 
 
 def _save(data: dict):
@@ -92,7 +103,8 @@ def _save(data: dict):
 def update(provider=None, models=None, search=None, browser_cookies=None, memory_use=None, memory_learn=None, embedding_model=None, memory_model=None, generative_ui=None, title_model=None, tiers=None):
     data = load()
     if tiers is not None:
-        data["tiers"] = {k: v.strip()[:200] for k, v in tiers.items() if k in TIERS and v.strip()}
+        key = "tiers_opencode" if data["provider"] == "opencode" else "tiers"
+        data[key] = {k: v.strip()[:200] for k, v in tiers.items() if k in TIERS and v.strip()}
     if generative_ui is not None:
         data["generative_ui"] = bool(generative_ui)
     if browser_cookies is not None:
