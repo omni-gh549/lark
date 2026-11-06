@@ -215,7 +215,10 @@ async def opencode_usage(key: str) -> dict:
         data = r.json()
     except ValueError:
         data = {}
-    data = data.get("data", data) if isinstance(data, dict) else {}
+    if isinstance(data, dict):
+        data = next((data[k] for k in ("usage", "data") if isinstance(data.get(k), dict)), data)
+    else:
+        data = {}
     out = []
     for wid, label in WINDOWS:
         w = data.get(wid)
