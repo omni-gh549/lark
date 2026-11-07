@@ -139,7 +139,7 @@
   .dial-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; transition: transform .25s; }
   .open .dial-btn svg { transform: rotate(180deg); }
   .dial-pop {
-    position: absolute; bottom: calc(100% + 12px); right: -6px; width: 300px; max-width: calc(100vw - 24px); padding: 14px 16px;
+    position: absolute; bottom: calc(100% + 12px); right: -6px; width: 324px; max-width: calc(100vw - 24px); padding: 14px 16px;
     border-radius: 16px; border: 1px solid var(--line); background: var(--card);
     box-shadow: 0 6px 22px rgba(0, 0, 0, 0.1);
     opacity: 0; transform: translateY(6px) scale(0.97); transform-origin: bottom right; pointer-events: none;
@@ -180,10 +180,10 @@
     background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
     transition: left .25s cubic-bezier(.3, .8, .3, 1), transform .15s;
   }
-  .dial-labels { position: relative; height: 16px; display: block; font-size: 12.5px; color: var(--ink-soft); margin-top: 9px; padding: 0 2px; }
+  .dial-labels { position: relative; height: 16px; display: block; font-size: 12px; padding: 0; color: var(--ink-soft); margin-top: 9px; padding: 0 2px; }
   .dial-labels span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; transition: color .25s; }
   .dial-labels .first { transform: none; left: 0 !important; }
   .dial-labels .last { transform: none; left: auto !important; right: 0; }
-  .dial-labels .on { color: var(--ink); font-weight: 500; }
+  .dial-labels .on { color: var(--ink); }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
