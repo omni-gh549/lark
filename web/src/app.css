@@ -38,7 +38,7 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #111317; --bg-1: #1a2230; --bg-2: #221e1c; --bg-3: #181c1b;
-    --ink: #e8eaee; --ink-soft: #b0b8c2; --ink-faint: #8d95a0; --panel: rgba(255, 255, 255, 0.06); --code: rgba(255, 255, 255, 0.07);
+    --ink: #e8eaee; --ink-soft: #b0b8c2; --ink-faint: #8d95a0; --panel: rgba(255, 255, 255, 0.085); --code: rgba(255, 255, 255, 0.07);
     --glass: rgba(255, 255, 255, 0.07); --glass-strong: rgba(255, 255, 255, 0.13);
     --veil: rgba(17, 19, 23, 0.75); --line: rgba(255, 255, 255, 0.13);
     --accent: #e8eaee; --on-accent: #151b26; --live: #5cc28c; --danger: #e5776c; --card: #1b1e25; --rail: #16191e; --sel: rgba(255, 255, 255, 0.1);
@@ -47,7 +47,7 @@
 }
 :root[data-theme="dark"] {
   --bg: #111317; --bg-1: #1a2230; --bg-2: #221e1c; --bg-3: #181c1b;
-  --ink: #e8eaee; --ink-soft: #b0b8c2; --ink-faint: #8d95a0; --panel: rgba(255, 255, 255, 0.06); --code: rgba(255, 255, 255, 0.07);
+  --ink: #e8eaee; --ink-soft: #b0b8c2; --ink-faint: #8d95a0; --panel: rgba(255, 255, 255, 0.085); --code: rgba(255, 255, 255, 0.07);
   --glass: rgba(255, 255, 255, 0.07); --glass-strong: rgba(255, 255, 255, 0.13);
   --veil: rgba(17, 19, 23, 0.75); --line: rgba(255, 255, 255, 0.13);
   --accent: #e8eaee; --on-accent: #151b26; --live: #5cc28c; --danger: #e5776c; --card: #1b1e25; --rail: #16191e; --sel: rgba(255, 255, 255, 0.1);

@@ -273,7 +273,7 @@
   {#if s}
     {#if page === "model"}
     <div class="group">
-      <h2>Provider</h2>
+      <h2>Connection</h2>
       <div class="rows">
         <div class="row">
           <div class="row-head">
