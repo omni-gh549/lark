@@ -283,6 +283,9 @@
                 <button aria-pressed={s.provider === name} onclick={() => choose(name)}>{p.label}</button>
               {/each}
             </div>
+            <select class="seg-select" aria-label="Provider" value={s.provider} onchange={(e) => choose(e.currentTarget.value)}>
+              {#each Object.entries(s.providers) as [name, p]}<option value={name}>{p.label}</option>{/each}
+            </select>
           </div>
         </div>
         <div class="row">

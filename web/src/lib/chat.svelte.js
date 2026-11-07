@@ -267,6 +267,32 @@ export async function deleteChat(id) {
   refreshList();
 }
 
+export async function renameChat(id, title) {
+  if (!title.trim()) return;
+  await api(`/api/chats/${id}`, { method: "PATCH", body: { title } }).catch(() => {});
+  refreshList();
+}
+
+export async function pinChat(id, pinned) {
+  await api(`/api/chats/${id}`, { method: "PATCH", body: { pinned } }).catch(() => {});
+  refreshList();
+}
+
+// Runs the last question again: the reply to it is dropped, then the question is sent as new.
+export async function retry() {
+  if (chat.busy || !chat.id) return;
+  const i = chat.messages.findLastIndex((m) => m.role === "user");
+  if (i < 0) return;
+  const { content, images } = chat.messages[i];
+  try {
+    await api(`/api/chats/${chat.id}`, { method: "PUT", body: { messages: chat.messages.slice(0, i) } });
+  } catch {
+    return;
+  }
+  chat.messages = chat.messages.slice(0, i);
+  await send(content, images ?? []);
+}
+
 export function newChat() {
   detach();
   chat.id = null;

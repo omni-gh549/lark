@@ -1,6 +1,6 @@
 <script>
   import { onMount, tick } from "svelte";
-  import { chat, init, send, stop } from "./chat.svelte.js";
+  import { chat, init, send, stop, retry } from "./chat.svelte.js";
   import { configured } from "./store.svelte.js";
   import { render, segments } from "./markdown.js";
   import Block from "../openui/Block.svelte";
@@ -264,6 +264,11 @@
               <button type="button" aria-label="Copy reply" onclick={(e) => copy(m, e.currentTarget)}>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8.5" y="8.5" width="11" height="11" rx="2.5"/><path d="M15.5 8.5v-2a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/></svg><span>Copy</span>
               </button>
+              {#if m === chat.messages.findLast((x) => x.role === "assistant") && !chat.busy}
+                <button type="button" aria-label="Try again" onclick={retry}>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.5-5.800M20 4v5h-5"/></svg><span>Retry</span>
+                </button>
+              {/if}
             </div>
           {/if}
           {#if live && m.parts?.some((p) => p.type === "tool" && (p.name === "browser" || p.name === "request_login"))}

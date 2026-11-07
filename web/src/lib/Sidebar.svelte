@@ -3,7 +3,7 @@
   import { api } from "./api.js";
   import { app, loadSettings } from "./store.svelte.js";
   import { SETTINGS_PAGES } from "./settingsPages.js";
-  import { chat, newChat, openChat, deleteChat, refreshList } from "./chat.svelte.js";
+  import { chat, newChat, openChat, deleteChat, refreshList, renameChat, pinChat } from "./chat.svelte.js";
 
   let { route, page, go, wide = $bindable(), drawer = $bindable(), panelsOpen = $bindable() } = $props();
 
@@ -13,6 +13,21 @@
   let pq = $state("");
   let confirming = $state(null); // id of the chat whose delete is awaiting confirmation
   let searchEl = $state();
+  let opened = $state(null); // id of the chat whose actions menu is open
+  let renaming = $state(null); // id of the chat being renamed
+  let draft = $state("");
+  const startRename = async (c) => {
+    opened = null;
+    draft = c.title;
+    renaming = c.id;
+    await tick();
+    document.querySelector(".rename-input")?.select();
+  };
+  const finishRename = (save) => {
+    const id = renaming;
+    renaming = null;
+    if (save && id && draft.trim()) renameChat(id, draft);
+  };
 
   const shown = $derived.by(() => {
     const q = query.trim().toLowerCase();
@@ -21,9 +36,9 @@
   const groups = $derived.by(() => {
     const out = [];
     const start = new Date().setHours(0, 0, 0, 0);
-    for (const c of shown) {
+    for (const c of [...shown].sort((a, b) => Number(b.pinned) - Number(a.pinned))) {
       const age = Math.floor((start - new Date(c.updated * 1000).setHours(0, 0, 0, 0)) / 864e5);
-      const name = age <= 0 ? "Today" : age === 1 ? "Yesterday" : age < 8 ? "Previous 7 days" : "Older";
+      const name = c.pinned ? "Pinned" : age <= 0 ? "Today" : age === 1 ? "Yesterday" : age < 8 ? "Previous 7 days" : "Older";
       const last = out[out.length - 1];
       if (last?.name === name) last.items.push(c);
       else out.push({ name, items: [c] });
@@ -82,6 +97,7 @@
     refreshList();
     const onclick = (e) => {
       if (menuOpen && !e.target.closest?.(".side-foot")) menuOpen = false;
+      if (opened && !e.target.closest?.(".row-menu")) opened = null;
     };
     const onkey = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "b") {
@@ -206,13 +222,27 @@
             <button class="ask-btn danger" onclick={() => { confirming = null; deleteChat(c.id); }}>Delete</button>
             <button class="ask-btn" onclick={() => (confirming = null)}>Cancel</button>
           {:else}
-            <button class="side-pick" onclick={() => pick(c.id)}>
-              {#if c.running}<span class="dot live"></span>{/if}
-              <span class="side-title">{c.title}</span>
-            </button>
-            <button class="side-del" aria-label="Delete chat" title={when(c.updated)} onclick={() => (confirming = c.id)}>
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></svg>
-            </button>
+            {#if renaming === c.id}
+              <input class="rename-input" bind:value={draft} aria-label="Rename chat"
+                onkeydown={(e) => { if (e.key === "Enter") finishRename(true); else if (e.key === "Escape") { e.stopPropagation(); finishRename(false); } }}
+                onblur={() => finishRename(true)} />
+            {:else}
+              <button class="side-pick" onclick={() => pick(c.id)}>
+                {#if c.running}<span class="dot live"></span>{/if}
+                <span class="side-title">{c.title}</span>
+              </button>
+              <button class="side-del" aria-label="Chat actions" aria-expanded={opened === c.id} title={when(c.updated)} onclick={(e) => { e.stopPropagation(); opened = opened === c.id ? null : c.id; }}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18" cy="12" r="1.2"/></svg>
+              </button>
+              {#if opened === c.id}
+                <div class="menu row-menu">
+                  <button onclick={() => startRename(c)}>Rename</button>
+                  <button onclick={() => { opened = null; pinChat(c.id, !c.pinned); }}>{c.pinned ? "Unpin" : "Pin"}</button>
+                  <hr />
+                  <button class="danger" onclick={() => { opened = null; confirming = c.id; }}>Delete</button>
+                </div>
+              {/if}
+            {/if}
           {/if}
         </div>
       {/each}

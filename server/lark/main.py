@@ -528,6 +528,18 @@ async def put_chat(chat_id: str, body: SavedChat):
         return err(413, str(e))
 
 
+class ChatMeta(BaseModel):
+    title: str | None = Field(default=None, max_length=200)
+    pinned: bool | None = None
+
+
+@app.patch("/api/chats/{chat_id}")
+async def patch_chat(chat_id: str, body: ChatMeta):
+    if not chats.valid(chat_id) or not chats.set_meta(chat_id, body.title, body.pinned):
+        return err(404, "No such chat.")
+    return {"ok": True}
+
+
 class SendIn(BaseModel):
     model: str | None = Field(default=None, max_length=20)  # "swarm" when a new chat was started on the Agent Swarm stop
     content: str = Field(default="", max_length=100_000)

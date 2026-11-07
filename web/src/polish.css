@@ -210,3 +210,16 @@
   .seg button { min-height: 40px; }
   .row-head .seg { padding: 3px; }
 }
+
+/* chat row actions */
+.side-row { position: relative; }
+.side-del { opacity: 0; }
+.side-row:hover .side-del, .side-row.current .side-del { opacity: 1; }
+.row-menu { right: 4px; left: auto; top: 100%; z-index: 8; width: 160px; background: var(--bg); border: 1px solid var(--line); }
+.row-menu .danger { color: var(--danger); }
+.rename-input { flex: 1; min-width: 0; margin: 2px 4px; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--ink); background: var(--card); outline: 0; font-size: 14.5px; }
+.seg-select { display: none; }
+@media (max-width: 480px) {
+  .row-head .seg { display: none; }
+  .seg-select { display: block; width: 100%; min-height: 46px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); font-size: 16px; }
+}

@@ -42,6 +42,8 @@ def save(chat_id: str, messages: list[dict], error: str | None = None) -> dict:
     doc = {"id": chat_id, "title": _title(messages), "created": created, "updated": time.time(), "messages": messages}
     if old.get("titled") and old.get("title"):
         doc["title"], doc["titled"] = old["title"], old["titled"]  # a title the model wrote stays through later saves
+    if old.get("pinned"):
+        doc["pinned"] = True  # a pin stays through later saves
     if old.get("model"):
         doc["model"], doc["provider"] = old["model"], old.get("provider")  # the model this chat uses stays through later saves
     if error:
@@ -120,7 +122,24 @@ def listing() -> list[dict]:
     for p in _dir().glob("*.json"):
         try:
             d = json.loads(p.read_text())
-            rows.append({k: d[k] for k in ("id", "title", "created", "updated")})
+            rows.append({**{k: d[k] for k in ("id", "title", "created", "updated")}, "pinned": bool(d.get("pinned"))})
         except (OSError, ValueError, KeyError):
             continue
     return sorted(rows, key=lambda r: r["updated"], reverse=True)
+
+
+def set_meta(chat_id: str, title: str | None = None, pinned: bool | None = None) -> bool:
+    """Renames a chat (a name you chose is never replaced by a generated one) and/or pins it to the top of the list."""
+    doc = load(chat_id)
+    if not doc:
+        return False
+    if title is not None and title.strip():
+        doc["title"], doc["titled"] = " ".join(title.split())[:80], {"users": 10**6, "again": True}
+    if pinned is not None:
+        doc["pinned"] = bool(pinned)
+    fd, tmp = tempfile.mkstemp(dir=_dir(), suffix=".tmp")
+    with os.fdopen(fd, "w") as f:
+        f.write(json.dumps(doc))
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, _dir() / f"{chat_id}.json")
+    return True
