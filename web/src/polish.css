@@ -236,3 +236,17 @@
 .thread, .page { -webkit-mask-image: none; mask-image: none; }
 .composer { background: color-mix(in srgb, var(--card) 94%, transparent); box-shadow: 0 1px 2px rgba(20, 30, 50, 0.08), 0 10px 28px -12px rgba(20, 30, 50, 0.18); }
 .hello { margin-bottom: 3vh; }
+
+/* round 12 */
+@media (min-width: 761px) {
+  .top::before { display: none; }
+  .thread, .page { -webkit-mask-image: linear-gradient(to bottom, transparent calc(var(--top) - 14px), #000 calc(var(--top) + 8px)); mask-image: linear-gradient(to bottom, transparent calc(var(--top) - 14px), #000 calc(var(--top) + 8px)); }
+}
+/* a new chat: the greeting and the composer sit together in the middle of the page */
+.chat:has(.hello) { grid-template-rows: auto auto; align-content: center; }
+.chat:has(.hello) .thread { padding-top: 0; padding-bottom: 0; overflow: visible; -webkit-mask-image: none; mask-image: none; }
+.chat:has(.hello) .hello { margin: 0 0 28px; }
+.rows, .card { border-radius: 14px; background: color-mix(in srgb, var(--card) 88%, transparent); }
+.side-label { font-size: 13px; color: var(--ink-soft); }
+.acts button { color: var(--ink-soft); font-size: 13.5px; }
+.dial-model { font-family: var(--mono); font-size: 12.5px; }
