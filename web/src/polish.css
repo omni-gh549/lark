@@ -175,3 +175,15 @@
   .seg { max-width: 100%; }
   .seg button { padding: 9px 4px; font-size: 13px; min-width: 0; }
 }
+
+/* round 6 */
+.thread > :first-child { margin-top: 0; }
+.thread { padding-top: calc(var(--top) + 28px); }
+.panel-foot { margin-top: auto; }
+.side-list + .panel-foot { margin-top: 6px; }
+.code pre { overflow-x: auto; }
+@media (max-width: 480px) {
+  .row-head .seg { flex-direction: column; border-radius: 16px; }
+  .seg button { min-height: 44px; font-size: 15px; }
+}
+@media (hover: none) { .side-del { opacity: 0.5; } }

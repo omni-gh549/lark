@@ -8,8 +8,8 @@
   const BLURB = {
     cheap: "Fastest and lightest for quick questions.",
     balanced: "Everyday quality at a steady pace.",
-    smart: "The strongest single model.",
-    swarm: "Many agents research and cross-check together. Slower, and costs more.",
+    smart: "Uses your Smart model, the most capable single one.",
+    swarm: "A mode, not a model: many agents research and cross-check together. Slower, and costs more.",
   };
   const LAST = NAMES.length - 1;
   const SWARM = "swarm"; // stored as the chat's model while the slider is on Agent Swarm

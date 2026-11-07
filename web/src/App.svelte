@@ -175,7 +175,11 @@
         <button class="icon-btn menu-btn" aria-label="Menu" aria-expanded={drawer} onclick={() => (drawer = true)}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M9.5 4.5v15"/></svg>
         </button>
-        {#if route === "chat"}
+        {#if route === "settings"}
+          <button class="icon-btn menu-btn" aria-label="Back to chat" onclick={() => go("chat")}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>
+          </button>
+        {:else if route === "chat"}
           <button class="icon-btn menu-btn" aria-label="New chat" onclick={newChat} disabled={!chat.messages.length}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h8M4 20l1-4L16 5l3 3L8 19z"/></svg>
           </button>
