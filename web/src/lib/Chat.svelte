@@ -1,6 +1,6 @@
 <script>
   import { onMount, tick } from "svelte";
-  import { chat, init, send, stop, retry } from "./chat.svelte.js";
+  import { chat, init, send, stop, retry, takeBack } from "./chat.svelte.js";
   import { configured } from "./store.svelte.js";
   import { render, segments } from "./markdown.js";
   import Block from "../openui/Block.svelte";
@@ -211,13 +211,20 @@
         </div>
       </div>
     {/if}
-    {#each chat.messages as m}
+    {#each chat.messages as m, mi}
       {#if m.role === "user"}
+        <div class="me-wrap">
         <div class="msg me">
           {#if m.images?.length}
             <div class="pics">{#each m.images as id}<a href="/api/files/{id}" target="_blank" rel="noopener"><img src="/api/files/{id}" alt="Attached" /></a>{/each}</div>
           {/if}
           {m.content}
+        </div>
+        {#if !chat.busy}
+          <div class="acts me-acts"><button type="button" aria-label="Edit message" onclick={async () => { const t = await takeBack(mi); if (t != null) { text = t; await tick(); resize(); box?.focus(); } }}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h8M4 20l1-4L16 5l3 3L8 19z"/></svg><span>Edit</span>
+          </button></div>
+        {/if}
         </div>
       {:else if m.error}
         <div class="msg error">{m.content}</div>

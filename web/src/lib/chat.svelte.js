@@ -293,6 +293,20 @@ export async function retry() {
   await send(content, images ?? []);
 }
 
+// Takes a question back into the composer: it and everything after it are dropped, so it can be changed and sent again.
+export async function takeBack(index) {
+  if (chat.busy || !chat.id) return null;
+  const m = chat.messages[index];
+  if (!m || m.role !== "user") return null;
+  try {
+    await api(`/api/chats/${chat.id}`, { method: "PUT", body: { messages: chat.messages.slice(0, index) } });
+  } catch {
+    return null;
+  }
+  chat.messages = chat.messages.slice(0, index);
+  return m.content;
+}
+
 export function newChat() {
   detach();
   chat.id = null;

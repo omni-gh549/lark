@@ -13,6 +13,12 @@
   let pq = $state("");
   let confirming = $state(null); // id of the chat whose delete is awaiting confirmation
   let searchEl = $state();
+  let folded = $state(new Set()); // group names collapsed by the reader
+  const toggleGroup = (n) => {
+    const f = new Set(folded);
+    f.has(n) ? f.delete(n) : f.add(n);
+    folded = f;
+  };
   let opened = $state(null); // id of the chat whose actions menu is open
   let renaming = $state(null); // id of the chat being renamed
   let draft = $state("");
@@ -214,7 +220,8 @@
     {:else}
     <div class="side-list">
       {#each groups as g (g.name)}
-      <div class="side-label">{g.name}</div>
+      <button class="side-label group-toggle" aria-expanded={!folded.has(g.name)} onclick={() => toggleGroup(g.name)}>{g.name}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></button>
+      {#if !folded.has(g.name)}
       {#each g.items as c (c.id)}
         <div class="side-row" class:current={c.id === chat.id && route === "chat"} class:asking={confirming === c.id}>
           {#if confirming === c.id}
@@ -246,6 +253,7 @@
           {/if}
         </div>
       {/each}
+      {/if}
       {:else}
         <p class="side-empty">{query ? "No matching chats." : "No saved chats yet."}</p>
       {/each}

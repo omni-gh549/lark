@@ -279,3 +279,19 @@
 
 /* round 15 */
 @media (max-width: 760px) { .top::before { background: color-mix(in srgb, var(--bg) 90%, transparent); border-bottom-color: color-mix(in srgb, var(--line) 60%, transparent); } }
+
+/* round 16: edit on your own messages, collapsible groups, visible keyboard focus */
+.me-wrap { align-self: flex-end; display: flex; flex-direction: column; align-items: flex-end; max-width: 80%; width: auto; }
+.me-wrap .msg.me { max-width: 100%; }
+.me-acts { margin: 4px 4px 0 0; justify-content: flex-end; }
+.me-wrap:hover .me-acts, .me-acts:focus-within { opacity: 1; }
+.group-toggle { display: flex; align-items: center; gap: 4px; width: 100%; text-align: left; }
+.group-toggle svg { width: 12px; height: 12px; stroke-width: 2; transition: transform 0.15s; opacity: 0; }
+.group-toggle:hover svg, .group-toggle:focus-visible svg { opacity: 1; }
+.group-toggle[aria-expanded="true"] svg { transform: rotate(90deg); }
+:focus-visible { outline: 2px solid color-mix(in srgb, var(--ink) 70%, transparent); outline-offset: 2px; border-radius: 8px; }
+.composer :focus-visible { outline: none; }
+.send:focus-visible, .dial-btn:focus-visible, .attach:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.worked { width: 100%; }
+.worked summary { width: 100%; font-size: 13.5px; padding: 6px 0; border-bottom: 1px solid var(--line); border-radius: 0; }
+.worked[open] .worked-list { padding-top: 10px; }
