@@ -292,7 +292,9 @@
 .composer :focus-visible { outline: none; }
 .send:focus-visible, .dial-btn:focus-visible, .attach:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .worked { width: 100%; }
-.worked summary { width: 100%; font-size: 13.5px; padding: 6px 0; border-bottom: 1px solid var(--line); border-radius: 0; }
+.worked > summary { width: 100%; font-size: 13.5px; padding: 6px 0; border-bottom: 1px solid var(--line); border-radius: 0; }
+.worked .chip summary { width: auto; padding: 7px 14px; border: 0; border-radius: 14px; }
+.worked-list { gap: 8px; }
 .worked[open] .worked-list { padding-top: 10px; }
 
 /* round 17 */
