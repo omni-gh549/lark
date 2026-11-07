@@ -45,6 +45,16 @@
   };
   const browserUrl = (parts) => parts.findLast((p) => p.name === "browser" && /^\S+\.\S+$/.test(p.detail ?? ""))?.detail ?? "";
 
+  async function copy(m, el) {
+    const t = (m.parts ?? [{ type: "text", text: m.content }]).filter((p) => p.type === "text").map((p) => p.text).join("\n\n");
+    try {
+      await navigator.clipboard.writeText(t);
+      const label = el.querySelector("span");
+      label.textContent = "Copied";
+      setTimeout(() => (label.textContent = "Copy"), 1400);
+    } catch {}
+  }
+
   function onpaste(e) {
     const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith("image/"));
     if (files.length) {
@@ -72,7 +82,7 @@
   function resize() {
     if (!box) return;
     box.style.height = "0px";
-    box.style.height = Math.min(Math.max(box.scrollHeight, 40), 160) + "px";
+    box.style.height = Math.min(Math.max(box.scrollHeight, 56), 160) + "px";
   }
 
   function onkey(e) {
@@ -181,6 +191,16 @@
 
 <section class="view chat">
   <div class="thread" bind:this={thread} {onscroll}>
+    {#if !chat.messages.length}
+      <div class="hello">
+        <h2>What are we working on?</h2>
+        <div class="suggest">
+          {#each ["Research a topic on the web and summarise it", "Help me debug an error", "Draft and edit something I'm writing"] as t}
+            <button type="button" onclick={() => { text = t + ": "; box?.focus(); }}>{t}</button>
+          {/each}
+        </div>
+      </div>
+    {/if}
     {#each chat.messages as m}
       {#if m.role === "user"}
         <div class="msg me">
@@ -229,6 +249,13 @@
               {/each}
             {/if}
           {/each}
+          {#if !live}
+            <div class="acts">
+              <button type="button" aria-label="Copy reply" onclick={(e) => copy(m, e.currentTarget)}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8.5" y="8.5" width="11" height="11" rx="2.5"/><path d="M15.5 8.5v-2a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/></svg><span>Copy</span>
+              </button>
+            </div>
+          {/if}
           {#if live && m.parts?.some((p) => p.type === "tool" && (p.name === "browser" || p.name === "request_login"))}
             <BrowserWindow url={browserUrl(m.parts)} />
           {/if}
@@ -249,7 +276,10 @@
       <button type="button" class="newer" onclick={jump}>New messages ↓</button>
     {/if}
     {#if !configured()}
-      <p class="notice">Add an API key in <a href="#settings" onclick={onsettings}>Settings</a> to start chatting.</p>
+      <div class="setup">
+        <p><strong>Connect a provider to start chatting</strong>Add an API key and pick a model.</p>
+        <a class="btn" href="#settings/keys" onclick={onsettings}>Set up provider</a>
+      </div>
     {/if}
     {#if attachments.length || uploading || note}
       <div class="attached">

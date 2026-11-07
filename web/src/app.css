@@ -5,11 +5,14 @@
   --bg-2: #e7ded2;
   --bg-3: #dcdfd8;
   --ink: #1d2228;
-  --ink-soft: #66707a;
+  --ink-soft: #4d5762;
+  --ink-faint: #6b747e;
+  --panel: rgba(255, 255, 255, 0.78);
+  --code: rgba(29, 40, 58, 0.055);
   --glass: rgba(255, 255, 255, 0.55);
   --glass-strong: rgba(255, 255, 255, 0.86);
   --veil: rgba(233, 232, 229, 0.7);
-  --line: rgba(29, 34, 40, 0.09);
+  --line: rgba(29, 34, 40, 0.13);
   --accent: #1d2228;
   --card: #fff;
   --rail: #f6f6f4;
@@ -35,25 +38,25 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #111317; --bg-1: #1a2230; --bg-2: #221e1c; --bg-3: #181c1b;
-    --ink: #e8eaee; --ink-soft: #9aa2ad;
+    --ink: #e8eaee; --ink-soft: #b0b8c2; --ink-faint: #8d95a0; --panel: rgba(255, 255, 255, 0.06); --code: rgba(255, 255, 255, 0.07);
     --glass: rgba(255, 255, 255, 0.07); --glass-strong: rgba(255, 255, 255, 0.13);
-    --veil: rgba(17, 19, 23, 0.75); --line: rgba(255, 255, 255, 0.09);
+    --veil: rgba(17, 19, 23, 0.75); --line: rgba(255, 255, 255, 0.13);
     --accent: #e8eaee; --on-accent: #151b26; --live: #5cc28c; --danger: #e5776c; --card: #1b1e25; --rail: #16191e; --sel: rgba(255, 255, 255, 0.1);
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #111317; --bg-1: #1a2230; --bg-2: #221e1c; --bg-3: #181c1b;
-  --ink: #e8eaee; --ink-soft: #9aa2ad;
+  --ink: #e8eaee; --ink-soft: #b0b8c2; --ink-faint: #8d95a0; --panel: rgba(255, 255, 255, 0.06); --code: rgba(255, 255, 255, 0.07);
   --glass: rgba(255, 255, 255, 0.07); --glass-strong: rgba(255, 255, 255, 0.13);
-  --veil: rgba(17, 19, 23, 0.75); --line: rgba(255, 255, 255, 0.09);
+  --veil: rgba(17, 19, 23, 0.75); --line: rgba(255, 255, 255, 0.13);
   --accent: #e8eaee; --on-accent: #151b26; --live: #5cc28c; --danger: #e5776c; --card: #1b1e25; --rail: #16191e; --sel: rgba(255, 255, 255, 0.1);
   color-scheme: dark;
 }
 
 /* Backdrop palettes (Settings > Background). Mist is the default; each has a light and a dark set. */
-:root, :root[data-palette="mist"] { --mesh-1: #e8e9ec; --mesh-2: #c9d3e2; --mesh-3: #d8d3e4; --mesh-4: #e1e6ea; --grain: 0.16; }
-:root[data-palette="slate"] { --mesh-1: #e6e8eb; --mesh-2: #ccd4dd; --mesh-3: #b9c6d4; --mesh-4: #dde3e8; }
+:root, :root[data-palette="mist"] { --mesh-1: #e8eaed; --mesh-2: #d5dce6; --mesh-3: #dddbe7; --mesh-4: #e3e7eb; --grain: 0.1; }
+:root[data-palette="slate"] { --mesh-1: #e6e8eb; --mesh-2: #d1d8e0; --mesh-3: #c6d0db; --mesh-4: #dfe4e9; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) { --mesh-1: #121418; --mesh-2: #1c2233; --mesh-3: #241f2e; --mesh-4: #171c22; --grain: 0.14; }
   :root:not([data-theme="light"])[data-palette="slate"] { --mesh-1: #111418; --mesh-2: #1a2433; --mesh-3: #222d3d; --mesh-4: #161b21; }
@@ -140,7 +143,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 
 /* sidebar: a fixed icon rail, with a history panel that opens beside it */
 .app { --rail-w: 60px; --side-w: var(--rail-w); }
-.app.side-wide { --side-w: calc(var(--rail-w) + 272px); }
+.app.side-wide { --side-w: 284px; }
 .side {
   position: fixed; z-index: 4; left: 0; top: 0; bottom: 0; width: var(--side-w);
   display: flex; flex-direction: row; padding-left: var(--sal);

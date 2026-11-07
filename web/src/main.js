@@ -1,4 +1,5 @@
 import "./app.css";
+import "./polish.css";
 import { mount } from "svelte";
 import App from "./App.svelte";
 import { getBackdrop, getPalette } from "./lib/backdrop.js";
