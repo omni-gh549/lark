@@ -32,19 +32,30 @@
     }
   }
 
+  let saved = $state(false);
+  let savedTimer;
+  const flash = () => {
+    saved = true;
+    clearTimeout(savedTimer);
+    savedTimer = setTimeout(() => (saved = false), 1800);
+  };
+
   async function choose(provider) {
     app.settings = await api("/api/settings", { method: "PUT", body: { provider } });
+    flash();
   }
 
   async function saveModel(name, value) {
     if (value.trim() === s.models[name]) return;
     app.settings = await api("/api/settings", { method: "PUT", body: { models: { [name]: value } } });
+    flash();
   }
 
   async function saveTier(id, value) {
     const v = value.trim();
     if (!v || v === s.tiers[id]) return;
     app.settings = await api("/api/settings", { method: "PUT", body: { tiers: { ...s.tiers, [id]: v } } });
+    flash();
   }
 
   const saveKey = (name) =>
@@ -256,7 +267,7 @@
 {/snippet}
 
 <section class="page">
-  <h1>{pageLabel(page)}</h1>
+  <h1>{pageLabel(page)}{#if saved}<span class="saved" role="status">Saved</span>{/if}</h1>
 
   {#if s}
     {#if page === "model"}

@@ -147,3 +147,16 @@
   .row:has(> .row-title + .field), .row:has(> .row-title + .field + datalist) { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.4fr); align-items: center; column-gap: 24px; }
   .row:has(> .row-title + .field) > .status, .row:has(> .row-title + .field) > .meta { grid-column: 1 / -1; }
 }
+
+/* round 4 */
+.saved { margin-left: 12px; font-size: 13px; font-weight: 500; color: var(--live); vertical-align: middle; letter-spacing: 0; animation: saved-in 0.2s ease-out; }
+@keyframes saved-in { from { opacity: 0; } }
+.turn:last-child .acts { opacity: 1; }
+.seg button[aria-pressed="true"] { font-weight: 600; }
+.suggest button { padding: 10px 18px; }
+@media (max-width: 760px) { .suggest button { min-height: 44px; } .hello h2 { font-size: 26px; } }
+@media (max-width: 760px) {
+  .row-head .seg { width: 100%; }
+  .seg button { flex: 1; white-space: nowrap; padding: 9px 6px; font-size: 14px; }
+  .row-head { flex-direction: column; align-items: stretch; }
+}

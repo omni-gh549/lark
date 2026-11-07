@@ -165,6 +165,11 @@
       <input class="side-search" bind:this={searchEl} bind:value={query} placeholder="Search chats" aria-label="Search chats" />
     {/if}
 
+    {#if route === "settings"}
+      <button class="side-new" onclick={() => section("chat")}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>Back to chat
+      </button>
+    {:else}
     <button class="side-new" onclick={fresh}>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h8M4 20l1-4L16 5l3 3L8 19z"/></svg>New chat
     </button>
@@ -180,6 +185,7 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 4.5 8 4-8 4-8-4z"/><path d="m4 12.5 8 4 8-4M4 16.5l8 4 8-4"/></svg>Memory
       </button>
     </nav>
+    {/if}
 
     {#if route === "settings"}
       <input class="side-search" bind:value={pq} placeholder="Search settings" aria-label="Search settings" />

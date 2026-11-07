@@ -99,6 +99,7 @@
     <div class="dial-pop" aria-hidden={!open} inert={!open}>
       <div class="dial-title" title={shown === LAST ? "Agent Swarm" : s.tiers[NAMES[shown]]}>{LABELS[NAMES[shown]]}</div>
       <div class="dial-sub">{BLURB[NAMES[shown]]}</div>
+      {#if shown !== LAST && s.tiers?.[NAMES[shown]]}<div class="dial-model">{s.tiers[NAMES[shown]]}</div>{/if}
       <div class="dial-wrap" class:swarm>
         <span class="dial-glow" style="left:{x(at)}"></span>
         <div
@@ -138,7 +139,7 @@
   .dial-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; transition: transform .25s; }
   .open .dial-btn svg { transform: rotate(180deg); }
   .dial-pop {
-    position: absolute; bottom: calc(100% + 12px); right: -6px; width: 260px; max-width: calc(100vw - 24px); padding: 14px 16px;
+    position: absolute; bottom: calc(100% + 12px); right: -6px; width: 300px; max-width: calc(100vw - 24px); padding: 14px 16px;
     border-radius: 16px; border: 1px solid var(--line); background: var(--card);
     box-shadow: 0 6px 22px rgba(0, 0, 0, 0.1);
     opacity: 0; transform: translateY(6px) scale(0.97); transform-origin: bottom right; pointer-events: none;
@@ -146,7 +147,8 @@
   }
   .open .dial-pop { opacity: 1; transform: none; pointer-events: auto; }
   .dial-title { text-align: center; font-size: 14px; font-weight: 500; }
-  .dial-sub { text-align: center; color: var(--ink-soft); font-size: 12px; min-height: 36px; margin-top: 2px; }
+  .dial-model { text-align: center; font: 12px var(--mono); color: var(--ink-faint); margin: 4px 0 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dial-sub { text-align: center; color: var(--ink-soft); font-size: 12px; margin-top: 2px; min-height: 32px; }
   .dial-wrap { position: relative; margin-top: 8px; }
   /* a soft glow under the thumb, only on the fourth stop */
   .dial-glow {
@@ -178,7 +180,7 @@
     background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
     transition: left .25s cubic-bezier(.3, .8, .3, 1), transform .15s;
   }
-  .dial-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-soft); margin-top: 9px; padding: 0 2px; }
+  .dial-labels { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--ink-soft); margin-top: 9px; padding: 0 2px; }
   .dial-labels span { transition: color .25s; }
   .dial-labels .on { color: var(--ink); font-weight: 500; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

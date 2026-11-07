@@ -205,7 +205,7 @@
       <div class="hello">
         <h2>What are we working on?</h2>
         <div class="suggest">
-          {#each ["Research a topic on the web and summarise it", "Help me debug an error", "Draft and edit something I'm writing"] as t}
+          {#each ["Research a topic", "Debug a problem", "Draft or edit text"] as t}
             <button type="button" onclick={() => { text = t + ": "; box?.focus(); }}>{t}</button>
           {/each}
         </div>
