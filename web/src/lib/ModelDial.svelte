@@ -31,6 +31,10 @@
   const x = (f, off = R) => `calc(${f} * (100% - ${2 * R}px) + ${off}px)`;
   const swarm = $derived(shown === LAST);
 
+  // "openai/gpt-6.1-sol" reads as "GPT 6.1 Sol"
+  const pretty = (id) =>
+    (id || "").split("/").pop().split(/[-_]/).filter(Boolean).map((w) => (/^(gpt|glm|ai|llm|moe)$/i.test(w) ? w.toUpperCase() : w[0].toUpperCase() + w.slice(1))).join(" ");
+
   async function pick(i) {
     if (i === index) {
       chosen = null;
@@ -93,7 +97,7 @@
 {#if ready}
   <div class="dial" class:open bind:this={root} onkeydown={key} role="group" aria-label="Model">
     <button type="button" class="dial-btn" aria-expanded={open} aria-label="Choose model: {index < 0 ? 'custom' : LABELS[NAMES[index]]}" onclick={() => (open = !open)}>
-      <span>{index < 0 ? "Custom" : LABELS[NAMES[index]]}</span>{#if current && current !== SWARM}<span class="dial-name">{current.split("/").pop()}</span>{/if}
+      {#if current && current !== SWARM}<span>{pretty(current)}</span><span class="dial-name">{index < 0 ? "Custom" : LABELS[NAMES[index]]}</span>{:else}<span>{index < 0 ? "Custom" : LABELS[NAMES[index]]}</span>{/if}
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5" /></svg>
     </button>
     <div class="dial-pop" aria-hidden={!open} inert={!open}>
@@ -126,7 +130,7 @@
           <span class="thumb" style="left:{x(at)}"></span>
         </div>
       </div>
-      <div class="dial-labels" aria-hidden="true">{#each NAMES as n, i}<span class:on={i === shown} class:first={i === 0} class:last={i === LAST} style="left:{x(i / LAST)}">{i === LAST ? "Swarm" : LABELS[n]}</span>{/each}</div>
+      <div class="dial-labels">{#each NAMES as n, i}<span class:on={i === shown} class:first={i === 0} class:last={i === LAST} role="button" tabindex="-1" onclick={() => pick(i)} onkeydown={() => {}} style="left:{x(i / LAST)}">{i === LAST ? "Swarm" : LABELS[n]}</span>{/each}</div>
       <div class="dial-sub">{BLURB[NAMES[shown]]}</div>
     </div>
   </div>
@@ -158,6 +162,7 @@
   .dial-model svg { width: 14px; height: 14px; stroke: var(--ink-faint); }
   .dial-name { color: var(--ink-faint); margin-left: 6px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   @media (max-width: 480px) { .dial-name { display: none; } }
+  .dial-labels span { cursor: pointer; padding: 4px 6px; margin-top: -4px; }
   .dial-sub { text-align: center; color: var(--ink-soft); font-size: 12.5px; line-height: 1.4; margin-top: 12px; min-height: 36px; }
   .dial-wrap { position: relative; margin-top: 0; }
   /* a soft glow under the thumb, only on the fourth stop */

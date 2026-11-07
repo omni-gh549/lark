@@ -268,3 +268,11 @@
 .dial-labels { font-size: 12.5px; }
 .side-panel { border-right: 1px solid var(--line); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .side-panel { border-right-color: rgba(255,255,255,0.1); } }
+
+/* round 14 */
+.dial-btn > span:first-child { color: var(--ink); }
+@media (max-width: 600px) {
+  .suggest { flex-direction: column; align-items: stretch; width: 100%; }
+  .suggest button { text-align: center; }
+  .hello { text-align: center; }
+}
