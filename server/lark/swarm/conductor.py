@@ -272,7 +272,7 @@ async def _phases(hive: Hive, history: list[dict], notes: str, steer, outcome: d
 
     await phase("plan", plan)
     pl = board.get_kv("plan", {"squads": [], "directions": []})
-    hive.reserve = n_ver + n_red + 3
+    hive.reserve = min(n_ver + n_red + 3, hive.max_agents // 4)  # a small run keeps most of its agents for research
 
     # ---- research (or the design studio)
     hive.set_phase(1)
@@ -396,8 +396,8 @@ async def _review(hive: Hive, ask: str, rubric: list[str], n_red: int, design: b
 
     try:
         draft = await write()
-    except AgentFailure as e:
-        health.record("swarm", "could not write the draft")
+    except Exception as e:  # AgentFailure, or a refused spawn: the run still ends with an answer and the reason
+        health.record("swarm", f"could not write the draft: {type(e).__name__}")
         return ""
     for rnd in range(cfg["revise_rounds"] + 1):
         findings = ""
@@ -426,7 +426,7 @@ async def _review(hive: Hive, ask: str, rubric: list[str], n_red: int, design: b
             if gaps and not verdict.get("pass") and findings:
                 try:
                     draft = await write("\n".join(f"- {g['gap']}" for g in gaps) + "\n" + findings, draft)
-                except AgentFailure:
+                except Exception:
                     pass
             break
         # revise: targeted work on the gaps, check the new claims, rewrite
@@ -444,7 +444,7 @@ async def _review(hive: Hive, ask: str, rubric: list[str], n_red: int, design: b
         fb = "\n".join(f"- {g['gap']}" for g in gaps) + ("\n" + findings if findings else "")
         try:
             draft = await write(fb, draft)
-        except AgentFailure:
+        except Exception:
             break
     return draft
 

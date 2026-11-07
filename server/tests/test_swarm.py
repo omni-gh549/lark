@@ -205,6 +205,13 @@ n_agents = sum(1 for e in evs if "agent_spawn" in e) - 1
 check("the run stays inside its agent limit", n_agents <= 30, str(n_agents))
 c.put("/api/settings", json={"swarm": {"max_agents": 100}})
 
+# ---- a tiny run (OpenCode Go allows 8 agents) still ends with an answer ----------------------------------------------------------------
+c.put("/api/settings", json={"swarm": {"max_agents": 8}})
+cid = new_id()
+evs = ask(cid, "a big market study")
+check("an 8-agent run still answers", "answer" in final_text(evs).lower() and not any("error" in e for e in evs), final_text(evs)[:120])
+c.put("/api/settings", json={"swarm": {"max_agents": 100}})
+
 # ---- the spend cap -----------------------------------------------------------------------------------------------------------
 mock_swarm.CFG["cost"] = 0.05
 c.put("/api/settings", json={"swarm": {"budget": 0.2}})

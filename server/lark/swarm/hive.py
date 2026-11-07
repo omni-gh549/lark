@@ -358,9 +358,10 @@ class Hive:
         task = task.strip()
         if not task:
             raise SpawnError("Give the agent a task.")
-        limit = self.max_agents if kind in CHECK_KINDS or kind == "finisher" else self.max_agents - self.reserve
-        if len(self.agents) - 1 >= limit:
-            raise SpawnError(f"The run is at its limit of {limit} agents for this stage. Use the ones you have, or merge tasks.")
+        if kind not in CHECK_KINDS and kind != "finisher":  # checkers and the writer are few and always allowed: the answer must not depend on a free slot
+            limit = self.max_agents - self.reserve
+            if len(self.agents) - 1 >= limit:
+                raise SpawnError(f"The run is at its limit of {limit} agents for this stage. Use the ones you have, or merge tasks.")
         if kind not in CHECK_KINDS and kind != "finisher" and self.level() != "ok":
             raise SpawnError("The run is at its spend or time limit. Don't start more work: wrap up with what you have.")
         parent = parent or self.root
