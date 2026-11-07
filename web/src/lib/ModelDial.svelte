@@ -101,7 +101,6 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5" /></svg>
     </button>
     <div class="dial-pop" aria-hidden={!open} inert={!open}>
-      <div class="dial-title" class:swarm>{LABELS[NAMES[shown]]}</div>
       {#if shown !== LAST && s.tiers?.[NAMES[shown]]}
         <a class="dial-model" href="#settings/model" onclick={() => (open = false)} title="Change which model this stop uses">{s.tiers[NAMES[shown]]}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></a>
       {:else}
@@ -153,9 +152,7 @@
     transition: opacity .18s ease, transform .22s cubic-bezier(.2, .9, .3, 1);
   }
   .open .dial-pop { opacity: 1; transform: none; pointer-events: auto; }
-  .dial-title { text-align: center; font-size: 14.5px; font-weight: 600; color: #3b82f6; letter-spacing: -0.005em; }
-  .dial-title.swarm { color: var(--ink); }
-  .dial-model { display: flex; justify-content: center; align-items: center; gap: 2px; margin: 1px 0 10px; font-size: 12px; color: var(--ink); text-decoration: none; overflow: hidden; white-space: nowrap; }
+  .dial-model { display: flex; justify-content: center; align-items: center; gap: 2px; margin: 0 0 10px; font-size: 12px; color: var(--ink); text-decoration: none; overflow: hidden; white-space: nowrap; }
   .dial-model:hover { color: var(--ink-soft); }
   .dial-model.plain { color: var(--ink-soft); }
   .dial-model svg { width: 14px; height: 14px; stroke: var(--ink-faint); }
