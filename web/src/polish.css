@@ -193,3 +193,11 @@
 .msg.me { font-size: 15.5px; }
 @media (max-width: 600px) { .code pre code, .code pre { white-space: pre-wrap; overflow-wrap: anywhere; } }
 @media (max-width: 760px) { .side-row.current { background: var(--sel); } .row { padding: 14px 16px; } .group { margin-bottom: 20px; } }
+
+/* round 8 */
+.msg.me { background: var(--card); box-shadow: 0 1px 2px rgba(20, 30, 50, 0.06); }
+.page h2 { font-size: 16px; font-weight: 600; margin-bottom: 12px; }
+.row-title { font-weight: 500; }
+.thread { padding-bottom: 32px; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) body { font-weight: 380; } :root:not([data-theme="light"]) strong, :root:not([data-theme="light"]) th, :root:not([data-theme="light"]) h1, :root:not([data-theme="light"]) h2 { font-weight: 600; } }
+:root[data-theme="dark"] body { font-weight: 380; }
