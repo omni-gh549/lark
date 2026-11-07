@@ -295,3 +295,15 @@
 .worked { width: 100%; }
 .worked summary { width: 100%; font-size: 13.5px; padding: 6px 0; border-bottom: 1px solid var(--line); border-radius: 0; }
 .worked[open] .worked-list { padding-top: 10px; }
+
+/* round 17 */
+.chat { width: min(780px, 100%); }
+.page { width: min(760px, 100%); }
+.page h1 { font-size: 32px; margin-bottom: 28px; }
+.page h2 { font-size: 17px; }
+.side-label { font-size: 13.5px; padding-top: 18px; }
+.side-pick { min-height: 38px; }
+:focus-visible { outline-width: 1.5px; }
+.send:focus-visible, .dial-btn:focus-visible, .attach:focus-visible { outline-width: 1.5px; }
+.chip { font-size: 13.5px; }
+@media (max-width: 760px) { .thread { padding-top: calc(var(--top) + 36px); } .me-acts { margin-top: 2px; } }
