@@ -276,3 +276,6 @@
   .suggest button { text-align: center; }
   .hello { text-align: center; }
 }
+
+/* round 15 */
+@media (max-width: 760px) { .top::before { background: color-mix(in srgb, var(--bg) 90%, transparent); border-bottom-color: color-mix(in srgb, var(--line) 60%, transparent); } }

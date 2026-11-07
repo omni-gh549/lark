@@ -143,7 +143,7 @@
     border: 0; background: none;
     color: var(--ink-soft); font-size: 13.5px; transition: color .2s, background .2s;
   }
-  .dial-btn:hover, .open .dial-btn { color: var(--ink); background: var(--glass); }
+  .dial-btn:hover, .open .dial-btn { color: var(--ink); background: var(--sel); }
   .dial-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; transition: transform .25s; }
   .open .dial-btn svg { transform: rotate(180deg); }
   .dial-pop {
@@ -188,8 +188,8 @@
   }
   .swarm .fill::before { opacity: 1; }
   .swarm .fill { box-shadow: 0 0 14px rgba(140, 90, 240, 0.35); }
-  .stop { position: absolute; top: 12.5px; width: 3px; height: 3px; margin-left: -1.5px; border-radius: 50%; background: var(--ink-soft); opacity: 0.55; }
-  .stop.passed { background: #fff; opacity: 0.6; }
+  .stop { position: absolute; top: 12px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--ink-soft); opacity: 0.8; }
+  .stop.passed { background: #fff; opacity: 0.9; }
   .thumb {
     position: absolute; top: 2px; width: 24px; height: 24px; margin-left: -12px; border-radius: 50%;
     background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);

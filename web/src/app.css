@@ -1,6 +1,6 @@
 /* Layout: sidebar (slim rail that opens into a panel; a drawer on phones), top bar with the mode switch, centred chat column. */
 :root {
-  --bg: #e9e8e5;
+  --bg: #e8eaee;
   --bg-1: #d3dbe3;
   --bg-2: #e7ded2;
   --bg-3: #dcdfd8;
