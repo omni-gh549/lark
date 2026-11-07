@@ -6,9 +6,9 @@
   const NAMES = ["cheap", "balanced", "smart", "swarm"];
   const LABELS = { cheap: "Cheap", balanced: "Balanced", smart: "Smart", swarm: "Agent Swarm" };
   const BLURB = {
-    cheap: "Fastest and lightest for quick questions.",
-    balanced: "Everyday quality at a steady pace.",
-    smart: "Uses the model assigned to Smart.",
+    cheap: "Lower cost, for quick questions.",
+    balanced: "Everyday tasks at a steady pace.",
+    smart: "Complex reasoning, coding and writing.",
     swarm: "A mode, not a model: many agents research and cross-check together. Slower, and costs more.",
   };
   const LAST = NAMES.length - 1;

@@ -289,7 +289,7 @@
           </div>
         </div>
         <div class="row">
-          <label class="row-text" for="model"><span class="row-title">Model</span><span class="row-desc">Used when you pick a model outside the three slider stops.</span></label>
+          <label class="row-text" for="model"><span class="row-title">Custom model</span><span class="row-desc">Used when you choose a model outside the slider stops.</span></label>
           <div class="field">
             <input
               id="model"
