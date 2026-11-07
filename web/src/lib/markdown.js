@@ -9,7 +9,10 @@ DOMPurify.addHook("afterSanitizeAttributes", (node) => {
 });
 
 export function render(text) {
-  return DOMPurify.sanitize(marked.parse(text, { breaks: true, async: false }));
+  const html = DOMPurify.sanitize(marked.parse(text, { breaks: true, async: false }));
+  // code blocks get a small header with the language and a copy button (the click is handled in Chat)
+  return html.replace(/<pre><code(?: class="language-([\w+#.-]+)")?>/g, (_m, lang) =>
+    `<div class="code"><div class="code-bar"><span>${lang ?? ""}</span><button type="button" class="code-copy">Copy</button></div><pre><code>`).replace(/<\/code><\/pre>/g, "</code></pre></div>");
 }
 
 // Splits a reply into prose and ```openui blocks. A block still being written has no closing fence yet: open is true.

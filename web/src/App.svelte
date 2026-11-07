@@ -71,6 +71,11 @@
 
   $effect(() => watchMesh(meshEl));
 
+  const crumb = $derived(
+    route === "chat" ? (chat.list.find((c) => c.id === chat.id)?.title ?? "") :
+    route === "settings" ? "Settings" : route === "projects" ? "Projects" : route === "memory" ? "Memory" : ""
+  );
+
   const go = (r, sub) => {
     route = r;
     if (r === "settings") page = sub ?? page;
@@ -177,10 +182,7 @@
         {/if}
       </div>
 
-      <nav class="modes" aria-label="View" onclick={tripleTap}>
-        <button aria-current={route === "chat" ? "page" : undefined} onclick={() => go("chat")}>Chat</button>
-        <button aria-current={route === "projects" ? "page" : undefined} onclick={() => go("projects")}>Projects</button>
-      </nav>
+      <div class="crumb" role="heading" aria-level="1" onclick={tripleTap}>{crumb}</div>
 
       <span class="top-end" aria-hidden="true"></span>
     </header>

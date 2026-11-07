@@ -55,6 +55,16 @@
     } catch {}
   }
 
+  async function codeCopy(e) {
+    const b = e.target.closest?.(".code-copy");
+    if (!b) return;
+    try {
+      await navigator.clipboard.writeText(b.closest(".code").querySelector("pre").innerText);
+      b.textContent = "Copied";
+      setTimeout(() => (b.textContent = "Copy"), 1400);
+    } catch {}
+  }
+
   function onpaste(e) {
     const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith("image/"));
     if (files.length) {
@@ -190,7 +200,7 @@
 </script>
 
 <section class="view chat">
-  <div class="thread" bind:this={thread} {onscroll}>
+  <div class="thread" bind:this={thread} {onscroll} onclick={codeCopy}>
     {#if !chat.messages.length}
       <div class="hello">
         <h2>What are we working on?</h2>

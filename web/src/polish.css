@@ -106,3 +106,44 @@
 .setup strong { display: block; font-size: 14.5px; color: var(--ink); font-weight: 600; }
 .setup .btn { flex: none; padding: 7px 14px; background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-size: 14px; }
 .setup .btn { text-decoration: none; }
+
+/* round 2 */
+:root { --code-solid: #eceef2; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --code-solid: #1b1f27; } }
+:root[data-theme="dark"] { --code-solid: #1b1f27; }
+.md pre, .md th { background: var(--code-solid); }
+.composer { border-color: rgba(29, 34, 40, 0.16); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .composer { border-color: rgba(255, 255, 255, 0.16); } }
+.suggest { gap: 8px; margin-left: 0; }
+.suggest button { padding: 10px 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font-size: 15px; }
+.suggest button:hover { background: var(--card); border-color: color-mix(in srgb, var(--ink) 30%, transparent); }
+.side-me-text small { display: none; }
+.side-me-text { justify-content: center; }
+.stop-label { font-size: 14px; color: var(--ink); }
+
+/* round 3 */
+:root { --ink-faint: #5f6872; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ink-faint: #98a1ad; } }
+:root[data-theme="dark"] { --ink-faint: #98a1ad; }
+.crumb { justify-self: center; max-width: min(520px, 46vw); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14.5px; font-weight: 500; color: var(--ink-soft); padding: 8px 0; }
+.hello { text-align: center; padding-bottom: 10vh; }
+.hello h2 { font-size: 28px; font-weight: 500; letter-spacing: -0.015em; margin-bottom: 20px; }
+.suggest { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 10px; }
+.suggest button { font-size: 14.5px; padding: 9px 14px; color: var(--ink-soft); }
+.side-new, .side-nav button, .side-pick { font-weight: 500; }
+.side-pick { font-weight: 400; }
+.side-label { font-size: 12.5px; }
+
+.composer textarea { height: 44px; min-height: 44px; }
+.dial-btn { border: 1px solid var(--line); }
+.code { margin: 0.8em 0; border-radius: 12px; background: var(--code-solid); border: 1px solid var(--line); overflow: hidden; }
+.code pre { margin: 0; border: 0; border-radius: 0; background: transparent; }
+.code-bar { display: flex; justify-content: space-between; align-items: center; padding: 6px 8px 6px 14px; font-size: 12.5px; color: var(--ink-faint); border-bottom: 1px solid var(--line); }
+.code-copy { padding: 3px 8px; border-radius: 7px; color: var(--ink-faint); font-size: 12.5px; }
+.code-copy:hover { background: var(--sel); color: var(--ink); }
+
+/* settings rows: label and help on the left, the control on the right */
+@media (min-width: 761px) {
+  .row:has(> .row-title + .field), .row:has(> .row-title + .field + datalist) { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.4fr); align-items: center; column-gap: 24px; }
+  .row:has(> .row-title + .field) > .status, .row:has(> .row-title + .field) > .meta { grid-column: 1 / -1; }
+}
