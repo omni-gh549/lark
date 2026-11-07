@@ -13,7 +13,7 @@
   };
   const LAST = NAMES.length - 1;
   const SWARM = "swarm"; // stored as the chat's model while the slider is on Agent Swarm
-  const R = 14; // thumb radius: the track is as tall as the thumb, which sits flush inside it
+  const R = 12; // thumb radius: the track is as tall as the thumb, which sits flush inside it
 
   let open = $state(false);
   let drag = $state(null); // 0..1 while the thumb is being dragged
@@ -131,7 +131,6 @@
         </div>
       </div>
       <div class="dial-labels">{#each NAMES as n, i}<span class:on={i === shown} class:first={i === 0} class:last={i === LAST} role="button" tabindex="-1" onclick={() => pick(i)} onkeydown={() => {}} style="left:{x(i / LAST)}">{i === LAST ? "Swarm" : LABELS[n]}</span>{/each}</div>
-      <div class="dial-sub">{BLURB[NAMES[shown]]}</div>
     </div>
   </div>
 {/if}
@@ -147,23 +146,22 @@
   .dial-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; transition: transform .25s; }
   .open .dial-btn svg { transform: rotate(180deg); }
   .dial-pop {
-    position: absolute; bottom: calc(100% + 12px); right: -6px; width: 324px; max-width: calc(100vw - 24px); padding: 14px 16px;
+    position: absolute; bottom: calc(100% + 12px); right: -6px; width: 244px; max-width: calc(100vw - 24px); padding: 12px 14px 10px;
     border-radius: 16px; border: 1px solid var(--line); background: var(--card);
     box-shadow: 0 6px 22px rgba(0, 0, 0, 0.1);
     opacity: 0; transform: translateY(6px) scale(0.97); transform-origin: bottom right; pointer-events: none;
     transition: opacity .18s ease, transform .22s cubic-bezier(.2, .9, .3, 1);
   }
   .open .dial-pop { opacity: 1; transform: none; pointer-events: auto; }
-  .dial-title { text-align: center; font-size: 16px; font-weight: 600; color: #3b82f6; letter-spacing: -0.005em; }
+  .dial-title { text-align: center; font-size: 14.5px; font-weight: 600; color: #3b82f6; letter-spacing: -0.005em; }
   .dial-title.swarm { color: var(--ink); }
-  .dial-model { display: flex; justify-content: center; align-items: center; gap: 2px; margin: 2px 0 14px; font-size: 13px; color: var(--ink); text-decoration: none; overflow: hidden; white-space: nowrap; }
+  .dial-model { display: flex; justify-content: center; align-items: center; gap: 2px; margin: 1px 0 10px; font-size: 12px; color: var(--ink); text-decoration: none; overflow: hidden; white-space: nowrap; }
   .dial-model:hover { color: var(--ink-soft); }
   .dial-model.plain { color: var(--ink-soft); }
   .dial-model svg { width: 14px; height: 14px; stroke: var(--ink-faint); }
   .dial-name { color: var(--ink-faint); margin-left: 6px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   @media (max-width: 480px) { .dial-name { display: none; } }
   .dial-labels span { cursor: pointer; padding: 4px 6px; margin-top: -4px; }
-  .dial-sub { text-align: center; color: var(--ink-soft); font-size: 12.5px; line-height: 1.4; margin-top: 12px; min-height: 36px; }
   .dial-wrap { position: relative; margin-top: 0; }
   /* a soft glow under the thumb, only on the fourth stop */
   .dial-glow {
@@ -173,12 +171,12 @@
   }
   .swarm .dial-glow { opacity: 0.9; }
   .track {
-    position: relative; height: 28px; border-radius: 14px; background: var(--line);
+    position: relative; height: 24px; border-radius: 12px; background: var(--line);
     cursor: pointer; touch-action: none; outline: 0; user-select: none;
   }
   .track:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
   .fill {
-    position: absolute; left: 3px; top: 3px; height: 22px; border-radius: 11px 0 0 11px; background: #3b82f6; overflow: hidden;
+    position: absolute; left: 2px; top: 2px; height: 20px; border-radius: 10px 0 0 10px; background: #3b82f6; overflow: hidden;
     transition: width .25s cubic-bezier(.3, .8, .3, 1), box-shadow .35s ease;
   }
   /* blue through violet to a warm peach, fading in as the thumb reaches Agent Swarm */
@@ -188,14 +186,14 @@
   }
   .swarm .fill::before { opacity: 1; }
   .swarm .fill { box-shadow: 0 0 14px rgba(140, 90, 240, 0.35); }
-  .stop { position: absolute; top: 12px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--ink-soft); opacity: 0.8; }
+  .stop { position: absolute; top: 10px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--ink-soft); opacity: 0.8; }
   .stop.passed { background: #fff; opacity: 0.9; }
   .thumb {
-    position: absolute; top: 2px; width: 24px; height: 24px; margin-left: -12px; border-radius: 50%;
+    position: absolute; top: 2px; width: 20px; height: 20px; margin-left: -10px; border-radius: 50%;
     background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
     transition: left .25s cubic-bezier(.3, .8, .3, 1), transform .15s;
   }
-  .dial-labels { position: relative; height: 16px; display: block; font-size: 12px; padding: 0; color: var(--ink-soft); margin-top: 9px; padding: 0 2px; }
+  .dial-labels { position: relative; height: 14px; display: block; font-size: 11.5px; padding: 0; color: var(--ink-soft); margin-top: 9px; padding: 0 2px; }
   .dial-labels span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; transition: color .25s; }
   .dial-labels .first { transform: none; left: 0 !important; }
   .dial-labels .last { transform: none; left: auto !important; right: 0; }
