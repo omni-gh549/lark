@@ -250,3 +250,21 @@
 .side-label { font-size: 13px; color: var(--ink-soft); }
 .acts button { color: var(--ink-soft); font-size: 13.5px; }
 .dial-model { font-family: var(--mono); font-size: 12.5px; }
+
+/* round 13: type scale and edges */
+.side-new, .side-nav button, .side-pick, .side-nav.side-pages button { font-size: 15px; }
+.side-pick, .side-new, .side-nav button { padding-block: 8.5px; }
+.side-name { font-size: 18px; }
+.msg { font-size: 16.5px; line-height: 1.65; }
+.msg.me { font-size: 16px; }
+.composer textarea { font-size: 16px; }
+.acts button { font-size: 14px; }
+.row-title { font-size: 15px; }
+.row-desc, .meta { font-size: 13.5px; }
+.field input, .field select, .seg-select { font-size: 15px; border-color: color-mix(in srgb, var(--ink) 18%, transparent); border-radius: 10px; min-height: 40px; }
+.md pre code, .md code { font-size: 14.5px; }
+.dial-btn { font-size: 14px; }
+.dial-pop { width: 340px; bottom: calc(100% + 14px); }
+.dial-labels { font-size: 12.5px; }
+.side-panel { border-right: 1px solid var(--line); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .side-panel { border-right-color: rgba(255,255,255,0.1); } }

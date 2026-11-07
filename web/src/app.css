@@ -41,7 +41,7 @@
     --ink: #e8eaee; --ink-soft: #b0b8c2; --ink-faint: #8d95a0; --panel: rgba(255, 255, 255, 0.085); --code: rgba(255, 255, 255, 0.07);
     --glass: rgba(255, 255, 255, 0.07); --glass-strong: rgba(255, 255, 255, 0.13);
     --veil: rgba(17, 19, 23, 0.75); --line: rgba(255, 255, 255, 0.13);
-    --accent: #e8eaee; --on-accent: #151b26; --live: #5cc28c; --danger: #e5776c; --card: #1b1e25; --rail: #16191e; --sel: rgba(255, 255, 255, 0.1);
+    --accent: #e8eaee; --on-accent: #151b26; --live: #5cc28c; --danger: #e5776c; --card: #1b1e25; --rail: #1a1e24; --sel: rgba(255, 255, 255, 0.1);
     color-scheme: dark;
   }
 }
@@ -50,7 +50,7 @@
   --ink: #e8eaee; --ink-soft: #b0b8c2; --ink-faint: #8d95a0; --panel: rgba(255, 255, 255, 0.085); --code: rgba(255, 255, 255, 0.07);
   --glass: rgba(255, 255, 255, 0.07); --glass-strong: rgba(255, 255, 255, 0.13);
   --veil: rgba(17, 19, 23, 0.75); --line: rgba(255, 255, 255, 0.13);
-  --accent: #e8eaee; --on-accent: #151b26; --live: #5cc28c; --danger: #e5776c; --card: #1b1e25; --rail: #16191e; --sel: rgba(255, 255, 255, 0.1);
+  --accent: #e8eaee; --on-accent: #151b26; --live: #5cc28c; --danger: #e5776c; --card: #1b1e25; --rail: #1a1e24; --sel: rgba(255, 255, 255, 0.1);
   color-scheme: dark;
 }
 

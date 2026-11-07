@@ -126,7 +126,7 @@
           <span class="thumb" style="left:{x(at)}"></span>
         </div>
       </div>
-      <div class="dial-labels" aria-hidden="true">{#each NAMES as n, i}<span class:on={i === shown} class:first={i === 0} class:last={i === LAST} style="left:{x(i / LAST)}">{LABELS[n]}</span>{/each}</div>
+      <div class="dial-labels" aria-hidden="true">{#each NAMES as n, i}<span class:on={i === shown} class:first={i === 0} class:last={i === LAST} style="left:{x(i / LAST)}">{i === LAST ? "Swarm" : LABELS[n]}</span>{/each}</div>
       <div class="dial-sub">{BLURB[NAMES[shown]]}</div>
     </div>
   </div>
