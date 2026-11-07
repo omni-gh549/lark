@@ -187,3 +187,9 @@
   .seg button { min-height: 44px; font-size: 15px; }
 }
 @media (hover: none) { .side-del { opacity: 0.5; } }
+
+/* round 7 */
+.msg { font-size: 16px; line-height: 1.62; }
+.msg.me { font-size: 15.5px; }
+@media (max-width: 600px) { .code pre code, .code pre { white-space: pre-wrap; overflow-wrap: anywhere; } }
+@media (max-width: 760px) { .side-row.current { background: var(--sel); } .row { padding: 14px 16px; } .group { margin-bottom: 20px; } }

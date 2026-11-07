@@ -286,7 +286,7 @@
           </div>
         </div>
         <div class="row">
-          <label class="row-text" for="model"><span class="row-title">Model</span><span class="row-desc">Used when the slider is set to Custom.</span></label>
+          <label class="row-text" for="model"><span class="row-title">Model</span><span class="row-desc">Used when you pick a model outside the three slider stops.</span></label>
           <div class="field">
             <input
               id="model"
@@ -311,7 +311,7 @@
       <h2>Model slider</h2>
       <div class="rows">
         <div class="row">
-          <p class="meta" style="margin:0">The three stops on the slider in the chat box. Changes save as you leave a field.</p>
+          <p class="meta" style="margin:0">Models for Cheap, Balanced and Smart. Changes save when you leave a field.</p>
           {#each [["cheap", "Cheap"], ["balanced", "Balanced"], ["smart", "Smart"]] as [id, label]}
             <div class="field">
               <label class="meta stop-label" for="tier-{id}">{label}</label>
@@ -327,7 +327,7 @@
       <h2>Chat titles</h2>
       <div class="rows">
         <div class="row">
-          <label class="row-text" for="tmodel"><span class="row-title">Titles model</span><span class="row-desc">Optional. Names each chat after its first reply.</span></label>
+          <label class="row-text" for="tmodel"><span class="row-title">Conversation title model</span><span class="row-desc">Optional. Names each chat after its first reply.</span></label>
           <div class="field">
             <input id="tmodel" value={s.title_model ?? ""} placeholder="A cheap model that names your chats, e.g. qwen/qwen3.7-flash" autocomplete="off" spellcheck="false"
               onchange={(e) => setTitleModel(e.currentTarget.value)} />

@@ -8,7 +8,7 @@
   const BLURB = {
     cheap: "Fastest and lightest for quick questions.",
     balanced: "Everyday quality at a steady pace.",
-    smart: "Uses your Smart model, the most capable single one.",
+    smart: "Uses the model assigned to Smart.",
     swarm: "A mode, not a model: many agents research and cross-check together. Slower, and costs more.",
   };
   const LAST = NAMES.length - 1;
