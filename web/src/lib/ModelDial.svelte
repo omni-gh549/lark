@@ -93,13 +93,16 @@
 {#if ready}
   <div class="dial" class:open bind:this={root} onkeydown={key} role="group" aria-label="Model">
     <button type="button" class="dial-btn" aria-expanded={open} aria-label="Choose model: {index < 0 ? 'custom' : LABELS[NAMES[index]]}" onclick={() => (open = !open)}>
-      <span>{index < 0 ? "Custom" : LABELS[NAMES[index]]}</span>
+      <span>{index < 0 ? "Custom" : LABELS[NAMES[index]]}</span>{#if current && current !== SWARM}<span class="dial-name">{current.split("/").pop()}</span>{/if}
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5" /></svg>
     </button>
     <div class="dial-pop" aria-hidden={!open} inert={!open}>
-      <div class="dial-title" title={shown === LAST ? "Agent Swarm" : s.tiers[NAMES[shown]]}>{LABELS[NAMES[shown]]}</div>
-      <div class="dial-sub">{BLURB[NAMES[shown]]}</div>
-      {#if shown !== LAST && s.tiers?.[NAMES[shown]]}<div class="dial-model">{s.tiers[NAMES[shown]]}</div>{/if}
+      <div class="dial-title" class:swarm>{LABELS[NAMES[shown]]}</div>
+      {#if shown !== LAST && s.tiers?.[NAMES[shown]]}
+        <a class="dial-model" href="#settings/model" onclick={() => (open = false)} title="Change which model this stop uses">{s.tiers[NAMES[shown]]}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></a>
+      {:else}
+        <div class="dial-model plain">Several models at once</div>
+      {/if}
       <div class="dial-wrap" class:swarm>
         <span class="dial-glow" style="left:{x(at)}"></span>
         <div
@@ -124,6 +127,7 @@
         </div>
       </div>
       <div class="dial-labels" aria-hidden="true">{#each NAMES as n, i}<span class:on={i === shown} class:first={i === 0} class:last={i === LAST} style="left:{x(i / LAST)}">{LABELS[n]}</span>{/each}</div>
+      <div class="dial-sub">{BLURB[NAMES[shown]]}</div>
     </div>
   </div>
 {/if}
@@ -146,10 +150,16 @@
     transition: opacity .18s ease, transform .22s cubic-bezier(.2, .9, .3, 1);
   }
   .open .dial-pop { opacity: 1; transform: none; pointer-events: auto; }
-  .dial-title { text-align: center; font-size: 14px; font-weight: 500; }
-  .dial-model { text-align: center; font: 12px var(--mono); color: var(--ink-faint); margin: 4px 0 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .dial-sub { text-align: center; color: var(--ink-soft); font-size: 12px; margin-top: 2px; min-height: 32px; }
-  .dial-wrap { position: relative; margin-top: 8px; }
+  .dial-title { text-align: center; font-size: 16px; font-weight: 600; color: #3b82f6; letter-spacing: -0.005em; }
+  .dial-title.swarm { color: var(--ink); }
+  .dial-model { display: flex; justify-content: center; align-items: center; gap: 2px; margin: 2px 0 14px; font-size: 13px; color: var(--ink); text-decoration: none; overflow: hidden; white-space: nowrap; }
+  .dial-model:hover { color: var(--ink-soft); }
+  .dial-model.plain { color: var(--ink-soft); }
+  .dial-model svg { width: 14px; height: 14px; stroke: var(--ink-faint); }
+  .dial-name { color: var(--ink-faint); margin-left: 6px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (max-width: 480px) { .dial-name { display: none; } }
+  .dial-sub { text-align: center; color: var(--ink-soft); font-size: 12.5px; line-height: 1.4; margin-top: 12px; min-height: 36px; }
+  .dial-wrap { position: relative; margin-top: 0; }
   /* a soft glow under the thumb, only on the fourth stop */
   .dial-glow {
     position: absolute; top: 50%; height: 44px; width: 84px; margin: -22px 0 0 -42px; border-radius: 50%; pointer-events: none;
