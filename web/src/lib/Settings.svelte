@@ -150,6 +150,7 @@
   async function setTitleModel(value) {
     try {
       app.settings = await api("/api/settings", { method: "PUT", body: { title_model: value } });
+      flash();
     } catch {
       /* the field keeps what was typed; try again */
     }
@@ -272,11 +273,11 @@
   {#if s}
     {#if page === "model"}
     <div class="group">
-      <h2>Model</h2>
+      <h2>Provider</h2>
       <div class="rows">
         <div class="row">
           <div class="row-head">
-            <span class="row-title">Provider</span>
+            <span class="row-text"><span class="row-title">Provider</span><span class="row-desc">Where your requests are sent.</span></span>
             <div class="seg" role="group" aria-label="Provider">
               {#each Object.entries(s.providers) as [name, p]}
                 <button aria-pressed={s.provider === name} onclick={() => choose(name)}>{p.label}</button>
@@ -285,7 +286,7 @@
           </div>
         </div>
         <div class="row">
-          <label class="row-title" for="model">Model for {s.providers[s.provider].label}</label>
+          <label class="row-text" for="model"><span class="row-title">Model</span><span class="row-desc">Used when the slider is set to Custom.</span></label>
           <div class="field">
             <input
               id="model"
@@ -303,10 +304,14 @@
           </datalist>
           <p class="status {modelNote[s.provider]?.kind ?? ''}">{modelNote[s.provider]?.text ?? ""}</p>
         </div>
-        {#if Object.keys(s.tiers ?? {}).length}
+      </div>
+    </div>
+    {#if Object.keys(s.tiers ?? {}).length}
+    <div class="group">
+      <h2>Model slider</h2>
+      <div class="rows">
         <div class="row">
-          <span class="row-title">Model slider</span>
-          <p class="meta" style="margin:0">The three stops on the model slider in the chat box.</p>
+          <p class="meta" style="margin:0">The three stops on the slider in the chat box. Changes save as you leave a field.</p>
           {#each [["cheap", "Cheap"], ["balanced", "Balanced"], ["smart", "Smart"]] as [id, label]}
             <div class="field">
               <label class="meta stop-label" for="tier-{id}">{label}</label>
@@ -315,16 +320,19 @@
             </div>
           {/each}
         </div>
-        {/if}
+      </div>
+    </div>
+    {/if}
+    <div class="group">
+      <h2>Chat titles</h2>
+      <div class="rows">
         <div class="row">
-          <label class="row-title" for="tmodel">Chat titles model (optional)</label>
+          <label class="row-text" for="tmodel"><span class="row-title">Titles model</span><span class="row-desc">Optional. Names each chat after its first reply.</span></label>
           <div class="field">
             <input id="tmodel" value={s.title_model ?? ""} placeholder="A cheap model that names your chats, e.g. qwen/qwen3.7-flash" autocomplete="off" spellcheck="false"
               onchange={(e) => setTitleModel(e.currentTarget.value)} />
           </div>
-          <p class="meta" style="margin:0">
-            Names each chat after its first reply so your history is easy to scan. Defaults to a cheap one on OpenRouter; clear it to use your chat model.
-          </p>
+          <p class="meta" style="margin:0">Defaults to a cheap model on OpenRouter. Clear it to use your chat model.</p>
         </div>
       </div>
     </div>

@@ -160,3 +160,18 @@
   .seg button { flex: 1; white-space: nowrap; padding: 9px 6px; font-size: 14px; }
   .row-head { flex-direction: column; align-items: stretch; }
 }
+
+/* round 5 */
+.row-text { display: flex; flex-direction: column; gap: 2px; }
+.row-desc { font-size: 13px; font-weight: 400; color: var(--ink-soft); line-height: 1.4; }
+.row:has(> .row-text + .field), .row:has(> .row-text + .field + datalist) { }
+@media (min-width: 761px) {
+  .row:has(> .row-text + .field), .row:has(> .row-text + .field + datalist) { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.4fr); align-items: center; column-gap: 24px; }
+  .row:has(> .row-text + .field) > .status, .row:has(> .row-text + .field) > .meta { grid-column: 1 / -1; }
+}
+.group { margin-bottom: 24px; }
+.row-head .row-text { flex: 1; }
+@media (max-width: 760px) {
+  .seg { max-width: 100%; }
+  .seg button { padding: 9px 4px; font-size: 13px; min-width: 0; }
+}

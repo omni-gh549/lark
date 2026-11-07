@@ -55,13 +55,13 @@
 }
 
 /* Backdrop palettes (Settings > Background). Mist is the default; each has a light and a dark set. */
-:root, :root[data-palette="mist"] { --mesh-1: #e8eaed; --mesh-2: #d5dce6; --mesh-3: #dddbe7; --mesh-4: #e3e7eb; --grain: 0.1; }
+:root, :root[data-palette="mist"] { --mesh-1: #e8eaed; --mesh-2: #d5dce6; --mesh-3: #dcdee6; --mesh-4: #e3e7eb; --grain: 0.1; }
 :root[data-palette="slate"] { --mesh-1: #e6e8eb; --mesh-2: #d1d8e0; --mesh-3: #c6d0db; --mesh-4: #dfe4e9; }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --mesh-1: #121418; --mesh-2: #1c2233; --mesh-3: #241f2e; --mesh-4: #171c22; --grain: 0.14; }
+  :root:not([data-theme="light"]) { --mesh-1: #121418; --mesh-2: #1b202b; --mesh-3: #1f2229; --mesh-4: #171c22; --grain: 0.14; }
   :root:not([data-theme="light"])[data-palette="slate"] { --mesh-1: #111418; --mesh-2: #1a2433; --mesh-3: #222d3d; --mesh-4: #161b21; }
 }
-:root[data-theme="dark"] { --mesh-1: #121418; --mesh-2: #1c2233; --mesh-3: #241f2e; --mesh-4: #171c22; --grain: 0.14; }
+:root[data-theme="dark"] { --mesh-1: #121418; --mesh-2: #1b202b; --mesh-3: #1f2229; --mesh-4: #171c22; --grain: 0.14; }
 :root[data-theme="dark"][data-palette="slate"] { --mesh-1: #111418; --mesh-2: #1a2433; --mesh-3: #222d3d; --mesh-4: #161b21; }
 
 * { box-sizing: border-box; }
