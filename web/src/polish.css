@@ -201,3 +201,12 @@
 .thread { padding-bottom: 32px; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) body { font-weight: 380; } :root:not([data-theme="light"]) strong, :root:not([data-theme="light"]) th, :root:not([data-theme="light"]) h1, :root:not([data-theme="light"]) h2 { font-weight: 600; } }
 :root[data-theme="dark"] body { font-weight: 380; }
+
+/* round 9 */
+.thread, .page { -webkit-mask-image: linear-gradient(to bottom, transparent calc(var(--top) - 8px), #000 calc(var(--top) + 8px)); mask-image: linear-gradient(to bottom, transparent calc(var(--top) - 8px), #000 calc(var(--top) + 8px)); }
+.md pre code, .md code { font-size: 14px; }
+.md pre { line-height: 1.55; }
+@media (max-width: 480px) {
+  .seg button { min-height: 40px; }
+  .row-head .seg { padding: 3px; }
+}

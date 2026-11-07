@@ -123,7 +123,7 @@
           <span class="thumb" style="left:{x(at)}"></span>
         </div>
       </div>
-      <div class="dial-labels" aria-hidden="true">{#each NAMES as n, i}<span class:on={i === shown}>{LABELS[n]}</span>{/each}</div>
+      <div class="dial-labels" aria-hidden="true">{#each NAMES as n, i}<span class:on={i === shown} class:first={i === 0} class:last={i === LAST} style="left:{x(i / LAST)}">{LABELS[n]}</span>{/each}</div>
     </div>
   </div>
 {/if}
@@ -180,8 +180,10 @@
     background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
     transition: left .25s cubic-bezier(.3, .8, .3, 1), transform .15s;
   }
-  .dial-labels { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--ink-soft); margin-top: 9px; padding: 0 2px; }
-  .dial-labels span { transition: color .25s; }
+  .dial-labels { position: relative; height: 16px; display: block; font-size: 12.5px; color: var(--ink-soft); margin-top: 9px; padding: 0 2px; }
+  .dial-labels span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; transition: color .25s; }
+  .dial-labels .first { transform: none; left: 0 !important; }
+  .dial-labels .last { transform: none; left: auto !important; right: 0; }
   .dial-labels .on { color: var(--ink); font-weight: 500; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
